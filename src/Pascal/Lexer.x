@@ -48,8 +48,9 @@ tokens :-
   "{" (\n | [^\{\}] )* "}"                            ; -- "{ ... }" comment
 
   -- operators
-  [\+\-\*\/=] | :=          { tok_read TokenOp }
-  [\(\)] | ".."             { tok_read TokenK }
+  [\+\-\*\/=]                                   { tok_string TokenOp }
+  ">" | ">=" | "<" | "<=" | "==" | "<>"         { tok_string TokenOp }
+  [\(\)] | ".." | ":=" | ":" | ";" | "," | "."  { tok_string TokenK }
   
   -- reserved words
   -- order does not matter -- Alex will pick the longest matching word
@@ -57,8 +58,6 @@ tokens :-
 
   -- identifier
   $alpha [$alpha $digit]*   { tok_string TokenID }
-
-
 
 {
 data TokenClass

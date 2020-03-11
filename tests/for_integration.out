@@ -1,0 +1,24 @@
+procedure. x: 1, y: 4
+loop-inner. x: 1, y: 4
+procedure. x: 1, y: 5
+loop-inner. x: 1, y: 5
+z: 4
+procedure. x: 1, y: 6
+loop-inner. x: 1, y: 6
+z: 5
+z: 4
+loop-outer. x: 1, y: 6
+procedure. x: 2, y: 4
+loop-inner. x: 2, y: 4
+loop-outer. x: 2, y: 4
+procedure. x: 3, y: 4
+loop-inner. x: 3, y: 4
+procedure. x: 3, y: 5
+loop-inner. x: 3, y: 5
+z: 4
+procedure. x: 3, y: 6
+loop-inner. x: 3, y: 6
+z: 5
+z: 4
+loop-outer. x: 3, y: 6
+x: 3, y: 6

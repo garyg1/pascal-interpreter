@@ -1,5 +1,5 @@
 //fpc 3.0.0
-
+program smoke;
 
 // // asdf *) asdf
 // // (* (* asdf *)
@@ -85,4 +85,4 @@ begin
     loopp();
 
     asdf(1, 'aaaaa');
-end;
+end.

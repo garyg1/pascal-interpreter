@@ -7,5 +7,6 @@ import Data.Char
 main :: IO ()
 main = do
     (fileName:_) <- getArgs
+    print fileName
     contents <- readFile fileName
     print $ show $ parseString $ map toLower contents

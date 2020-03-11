@@ -104,12 +104,6 @@ VarDecls :: {[VarDecl]}
     : { [] }
     | VarDecl ';' VarDecls { $1 : $3 }
 
--- like VarDecls but only Decl
-DeclsNoDefn :: {[VarDecl]}
-    : { [] }
-    | Decl                  { [ $1 ] }
-    | Decl ';' DeclsNoDefn  { $1 : $3 }
-
 VarDecl :: {VarDecl}
     : DeclDefn              { $1 }
     | Decl                  { $1 }
@@ -135,10 +129,17 @@ IdList :: {[Id]}
     | ID ',' IdList { Id $1 : $3 }
 
 Func :: {FuncOrProc}
-    : ID '(' DeclsNoDefn ')' ':' Type ';' Block ';'     { Func (Id $1) $3 $6 $8 }
+    : ID '(' ParamList ')' ':' Type ';' Block ';'     { Func (Id $1) $3 $6 $8 }
 
 Proc :: {FuncOrProc}
-    : ID '(' DeclsNoDefn ')' ';' Block ';'              { Proc (Id $1) $3 $6 }
+    : ID '(' ParamList ')' ';' Block ';'              { Proc (Id $1) $3 $6 }
+
+ParamList :: {[VarDecl]}
+    : { [] }
+    | Decl                      { [ $1 ] }
+    | 'var' Decl                { [ $2 ] }
+    | Decl ';' ParamList        { $1 : $3 }
+    | 'var' Decl ';' ParamList  { $2 : $4 }
 
 Stmt :: {Stmt}
     : CompoundStmt      { Stmts $1 }
@@ -148,7 +149,8 @@ Stmt :: {Stmt}
     | ForToStmt         { $1 }
     | KeywordStmt       { $1 }
     | AssignStmt        { $1 }
-    | FuncCall          { $1 }
+    | FuncCall          { FuncCallStmt $1 }
+    | '(' Stmt ')'      { $2 }
 
 CompoundStmt :: {[Stmt]}
     : 'begin' Stmts 'end' { $2 }
@@ -162,11 +164,11 @@ IfStmt :: {Stmt}
     | 'if' Expr 'then' Stmt 'else' Stmt         { IfElseStmt $2 $4 $6 }
 
 CaseStmt :: {Stmt}
-    : 'case' Expr 'of' CaseDecls                { CaseStmt $2 $4 }
-    | 'case' Expr 'of' CaseDecls 'else' Stmt    { CaseElseStmt $2 $4 $6 }
+    : 'case' Expr 'of' CaseDecls 'end'                  { CaseStmt $2 $4 }
+    | 'case' Expr 'of' CaseDecls 'else' Stmt ';' 'end'  { CaseElseStmt $2 $4 $6 }
 
 CaseDecls :: {[CaseDecl]}
-    : { [] }
+    : CaseDecl { [$1] }
     | CaseDecl CaseDecls { $1 : $2 }
 
 CaseDecl :: {CaseDecl}
@@ -174,6 +176,7 @@ CaseDecl :: {CaseDecl}
 
 IntList :: {[IntRange]}
     : intlit { [IntRange $1 $1] }
+    | intlit '..' intlit { [IntRange $1 $3] }
     | intlit ',' IntList                        { IntRange $1 $1 : $3 }
     | intlit '..' intlit ',' IntList            { IntRange $1 $3 : $5 }
 
@@ -191,8 +194,8 @@ KeywordStmt :: {Stmt}
 AssignStmt :: {Stmt}
     : ID ':=' Expr      { AssignStmt (Id $1) $3 }
 
-FuncCall :: {Stmt}
-    : ID '(' Args ')'   { FuncCallStmt $ FuncCall (Id $1) $3 }
+FuncCall :: {FuncCall}
+    : ID '(' Args ')'   { FuncCall (Id $1) $3 }
 
 Args :: {[Expr]}
     : { [] }
@@ -206,6 +209,7 @@ Expr :: {Expr}
     | 'true'            { BoolExpr True }
     | 'false'           { BoolExpr False }
     | intlit            { IntExpr $1 }
+    | FuncCall          { FuncCallExpr $1 }
     | '-' Expr          { UnaryExpr "-" $2 }
     | '(' Expr ')'      { $2 }
     | 'not' Expr        { UnaryExpr "not" $2 }

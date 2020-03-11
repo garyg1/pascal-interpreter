@@ -1,5 +1,6 @@
 program pass_by_ref_test;
 
+// TODO fix "var"
 function refPass(x, y: integer; var a, b, c : integer): integer;
 begin
     a := x;

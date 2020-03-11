@@ -1,4 +1,4 @@
-
+program smoke_test_p3;
 
 var a : integer;
     b : double;

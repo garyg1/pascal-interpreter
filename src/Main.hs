@@ -2,12 +2,10 @@ module Main where
 
 import Pascal
 import System.Environment
+import Data.Char
 
 main :: IO ()
 main = do
     (fileName:_) <- getArgs
     contents <- readFile fileName
-    case parseString contents of 
-        Left err -> print $ show err
-        Right ast -> print $ show ast 
-
+    print $ show $ parseString $ map toLower contents

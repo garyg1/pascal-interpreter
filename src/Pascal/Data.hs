@@ -1,72 +1,77 @@
 -- This file contains the data-structures for the AST
 -- The role of the parser is to build the AST (Abstract Syntax Tree) 
 
-module Pascal.Data
-    (
-        Program
-    ) where
+module Pascal.Data where
 
-data Program = Program Block
+data Program
+    = Program Block
+    deriving (Show, Eq)
 
-data Block = Block [Decl] CompoundStmt
+data Block
+    = Block [Decl] [Stmt]
+    deriving (Show, Eq)
 
 data Decl
     = VarDecls [VarDecl]
     | ConstDecls [VarDecl]
     | FuncDecl FuncOrProc
+    deriving (Show, Eq)
 
 data VarDecl
-    = Decls [Id] PascalType
-    | Decl Id PascalType
+    = Decl Id PascalType
+    | Decls [Id] PascalType
     | DeclTypeDefn Id PascalType Expr
     | DeclDefn Id Expr
+    deriving (Show, Eq)
 
 data FuncOrProc
-    = Func Id [Parameter] PascalType [Decl] CompoundStmt
-    | Proc Id [Parameter] [Decl] CompoundStmt
+    = Func Id [VarDecl] PascalType Block
+    | Proc Id [VarDecl] Block
+    deriving (Show, Eq)
 
-data PascalType = TypeBool | TypeInt | TypeFloat | TypeString
+data PascalType
+    = TypeBool | TypeInt | TypeFloat | TypeString
+    deriving (Show, Eq)
 
 data Stmt
-  = Stmts CompoundStmt
-  | IfStmt IfStmt
-  | CaseStmt CaseStmt
-  | WhileStmt WhileStmt
-  | ForToStmt ForToStmt
-  | KeywordStmt KeywordStmt
-  | AssignStmt AssignStmt
-  | FuncCall FuncCall
-
-type CompoundStmt = [Stmt]
-
-data IfStmt
-    = IfStmt Expr Stmt
+    = Stmts [Stmt]
+    | IfStmt Expr Stmt
     | IfElseStmt Expr Stmt Stmt
+    | CaseStmt Expr [CaseDecl]
+    | CaseElseStmt Expr [CaseDecl] Stmt
+    | WhileStmt Expr Stmt
+    | ForToStmt Id Expr Expr Stmt
+    | ForDownToStmt Id Expr Expr Stmt
+    | Continue
+    | Break
+    | AssignStmt Id Expr
+    | FuncCallStmt FuncCall
+    deriving (Show, Eq)
 
-data CaseStmt
-    = CaseStmt Expr Cases
-    | CaseElseStmt Expr Cases Stmt
 
-type CaseDecls = [CaseDecl]
-data CaseDecl = [IntOrRange] Stmt
+data CaseDecl
+    = CaseDecl [IntRange] Stmt
+    deriving (Show, Eq)
 
-data IntOrRange = Integer Integer | IntRange IntRange
-data IntRange = IntRange Integer Integer
-
-data WhileStmt = WhileStmt Expr Stmt
-
-data ForToStmt = ForToStmt Var Expr ToKeyword Expr Stmt
-data ToKeyword = To | DownTo
-data ForKeyword = Continue | Break
-
-data AssignStmt = AssignStmt Id Expr
-
+data IntRange
+    = IntRange Int Int
+    deriving (Show, Eq)
+    
 data Expr
     = UnaryExpr String Expr
     | BinaryExpr String Expr Expr
-    | FuncCall Var ArgsList
-    | Var String
-    | Integer Integer
-    | String String
+    | FuncCallExpr FuncCall
+    | VarExpr Id
+    | IntExpr Int
+    | StrExpr String
+    | FltExpr Float
+    | BoolExpr Bool
+    deriving (Show, Eq)
 
-data ArgsList = [Expr]
+data Id
+    = Id String
+    deriving (Show, Eq)
+
+data FuncCall
+    = FuncCall Id [Expr]
+    deriving (Show, Eq)

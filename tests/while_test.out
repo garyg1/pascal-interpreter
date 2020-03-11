@@ -1,0 +1,14 @@
+x = 2, didn''t break
+x = 4, didn''t break
+x = 8, didn''t break
+x = 16, didn''t break
+x = 32, didn''t break
+x = 33, if was true
+x = 66, didn''t break
+x = 132, didn''t break
+x = 264, didn''t break
+x = 528, didn''t break
+while, 1055
+while, 1054
+while, 1053
+while, 1052

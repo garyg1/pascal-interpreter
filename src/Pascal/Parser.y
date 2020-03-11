@@ -81,111 +81,111 @@ import Pascal.Lexer
 
 -- Entry point
 Program :: {Program}
-    : ProgramDecl Block '.' { Program $2 }
+    : ProgramDecl Block '.'     { Program $2 }
 
 ProgramDecl :: {}
-    : 'program' ID ';' {}
+    : 'program' ID ';'          {}
 
 Block :: {Block}
     : DeclSections CompoundStmt { Block $1 $2 }
 
 DeclSections :: {[Decl]}
     : { [] }
-    | DeclSection DeclSections { $1 : $2 }
+    | DeclSection DeclSections  { $1 : $2 }
 
 DeclSection :: {Decl}
-    : 'var' VarDecls        { VarDecls $2 }
-    | 'const' VarDecls      { ConstDecls $2 }
-    | 'function' Func       { FuncDecl $2 }
-    | 'procedure' Proc      { FuncDecl $2 }
+    : 'var' VarDecls            { VarDecls $2 }
+    | 'const' VarDecls          { ConstDecls $2 }
+    | 'function' Func           { FuncDecl $2 }
+    | 'procedure' Proc          { FuncDecl $2 }
 
 -- used for both const and var
 VarDecls :: {[VarDecl]}
-    : { [] }
-    | VarDecl ';' VarDecls { $1 : $3 }
+    :                           { [] }
+    | VarDecl ';' VarDecls      { $1 : $3 }
 
 VarDecl :: {VarDecl}
-    : DeclDefn              { $1 }
-    | Decl                  { $1 }
+    : DeclDefn                  { $1 }
+    | Decl                      { $1 }
 
 -- declaration with inital value
 DeclDefn :: {VarDecl}
-    : ID ':' Type '=' Expr  { DeclTypeDefn (Id $1) $3 $5 }
-    | ID '=' Expr           { DeclDefn (Id $1) $3 }
+    : ID ':' Type '=' Expr      { DeclTypeDefn (Id $1) $3 $5 }
+    | ID '=' Expr               { DeclDefn (Id $1) $3 }
 
 -- declaration with no initial value
 Decl :: {VarDecl}
-    : ID ':' Type           { Decl (Id $1) $3 }
-    | IdList ':' Type       { Decls $1 $3 }
+    : ID ':' Type               { Decl (Id $1) $3 }
+    | IdList ':' Type           { Decls $1 $3 }
 
 Type :: {PascalType}
-    : 'double'      { TypeFloat }
-    | 'boolean'     { TypeBool }
-    | 'integer'     { TypeInt }
-    | 'string'      { TypeString }
+    : 'double'                  { TypeFloat }
+    | 'boolean'                 { TypeBool }
+    | 'integer'                 { TypeInt }
+    | 'string'                  { TypeString }
 
 IdList :: {[Id]}
-    : ID { [Id $1] }
-    | ID ',' IdList { Id $1 : $3 }
+    : ID                        { [Id $1] }
+    | ID ',' IdList             { Id $1 : $3 }
 
 Func :: {FuncOrProc}
-    : ID '(' ParamList ')' ':' Type ';' Block ';'     { Func (Id $1) $3 $6 $8 }
+    : ID '(' ParamList ')' ':' Type ';' Block ';' { Func (Id $1) $3 $6 $8 }
 
 Proc :: {FuncOrProc}
-    : ID '(' ParamList ')' ';' Block ';'              { Proc (Id $1) $3 $6 }
+    : ID '(' ParamList ')' ';' Block ';' { Proc (Id $1) $3 $6 }
 
 ParamList :: {[VarDecl]}
     : { [] }
-    | Decl                      { [ $1 ] }
-    | 'var' Decl                { [ $2 ] }
+    | Decl                      { [$1] }
+    | 'var' Decl                { [$2] }
     | Decl ';' ParamList        { $1 : $3 }
     | 'var' Decl ';' ParamList  { $2 : $4 }
 
 Stmt :: {Stmt}
-    : CompoundStmt      { Stmts $1 }
-    | IfStmt            { $1 }
-    | CaseStmt          { $1 }
-    | WhileStmt         { $1 }
-    | ForToStmt         { $1 }
-    | KeywordStmt       { $1 }
-    | AssignStmt        { $1 }
-    | FuncCall          { FuncCallStmt $1 }
-    | '(' Stmt ')'      { $2 }
+    : CompoundStmt              { Stmts $1 }
+    | IfStmt                    { $1 }
+    | CaseStmt                  { $1 }
+    | WhileStmt                 { $1 }
+    | ForToStmt                 { $1 }
+    | KeywordStmt               { $1 }
+    | AssignStmt                { $1 }
+    | FuncCall                  { FuncCallStmt $1 }
+    | '(' Stmt ')'              { $2 }
 
 CompoundStmt :: {[Stmt]}
-    : 'begin' Stmts 'end' { $2 }
+    : 'begin' Stmts 'end'       { $2 }
 
 Stmts :: {[Stmt]}
-    : Stmt ';' { [ $1 ] }
-    | Stmt ';' Stmts { $1 : $3 }
+    : Stmt ';'                  { [$1] }
+    | Stmt ';' Stmts            { $1 : $3 }
 
 IfStmt :: {Stmt}
-    : 'if' Expr 'then' Stmt                     { IfStmt $2 $4 }
-    | 'if' Expr 'then' Stmt 'else' Stmt         { IfElseStmt $2 $4 $6 }
+    : 'if' Expr 'then' Stmt                             { IfStmt $2 $4 }
+    | 'if' Expr 'then' Stmt 'else' Stmt                 { IfElseStmt $2 $4 $6 }
 
 CaseStmt :: {Stmt}
     : 'case' Expr 'of' CaseDecls 'end'                  { CaseStmt $2 $4 }
     | 'case' Expr 'of' CaseDecls 'else' Stmt ';' 'end'  { CaseElseStmt $2 $4 $6 }
 
 CaseDecls :: {[CaseDecl]}
-    : CaseDecl { [$1] }
-    | CaseDecl CaseDecls { $1 : $2 }
+    : CaseDecl ';' { [$1] }
+    | CaseDecl ';' CaseDecls { $1 : $3 }
 
 CaseDecl :: {CaseDecl}
-    : IntList ':' Stmt ';'                      { CaseDecl $1 $3 }
+    : IntList ':' Stmt                                  { CaseDecl $1 $3 }
 
 IntList :: {[IntRange]}
-    : intlit { [IntRange $1 $1] }
-    | intlit '..' intlit { [IntRange $1 $3] }
-    | intlit ',' IntList                        { IntRange $1 $1 : $3 }
-    | intlit '..' intlit ',' IntList            { IntRange $1 $3 : $5 }
+    : intlit                                            { [IntRange $1 $1] }
+    | intlit '..' intlit                                { [IntRange $1 $3] }
+    | intlit ',' IntList                                { IntRange $1 $1 : $3 }
+    | intlit '..' intlit ',' IntList                    { IntRange $1 $3 : $5 }
 
 WhileStmt :: {Stmt}
-    : 'while' Expr 'do' Stmt                    { WhileStmt $2 $4 }
+    : 'while' Expr 'do' Stmt                            { WhileStmt $2 $4 }
 
 ForToStmt :: {Stmt}
-    : 'for' ID ':=' Expr 'to' Expr 'do' Stmt        { ForToStmt (Id $2) $4 $6 $8 }
-    | 'for' ID ':=' Expr 'downto' Expr 'do' Stmt    { ForDownToStmt (Id $2) $4 $6 $8 }
+    : 'for' ID ':=' Expr 'to' Expr 'do' Stmt            { ForToStmt (Id $2) $4 $6 $8 }
+    | 'for' ID ':=' Expr 'downto' Expr 'do' Stmt        { ForDownToStmt (Id $2) $4 $6 $8 }
 
 KeywordStmt :: {Stmt}
     : 'continue'        { Continue }

@@ -81,10 +81,10 @@ import Pascal.Lexer
 
 -- Entry point
 Program :: {Program}
-    : ProgramDecl Block '.'     { Program $2 }
+    : ProgramDecl Block '.'     { Program $1 $2 }
 
-ProgramDecl :: {}
-    : 'program' ID ';'          {}
+ProgramDecl :: {Id}
+    : 'program' ID ';'          { Id $2 }
 
 Block :: {Block}
     : DeclSections CompoundStmt { Block $1 $2 }

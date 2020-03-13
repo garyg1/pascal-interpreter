@@ -4,7 +4,7 @@
 module Pascal.Data where
 
 data Program
-    = Program Block
+    = Program Id Block
     deriving (Show, Eq)
 
 data Block
@@ -30,7 +30,10 @@ data FuncOrProc
     deriving (Show, Eq)
 
 data PascalType
-    = TypeBool | TypeInt | TypeFloat | TypeString
+    = TypeBool
+    | TypeInt
+    | TypeFloat
+    | TypeString
     deriving (Show, Eq)
 
 data Stmt
@@ -68,10 +71,10 @@ data Expr
     | BoolExpr Bool
     deriving (Show, Eq)
 
-data Id
+newtype Id
     = Id String
-    deriving (Show, Eq)
+    deriving (Show, Eq, Ord)
 
 data FuncCall
-    = FuncCall Id [Expr]
+    = FuncCall Id [Expr] -- name, args
     deriving (Show, Eq)

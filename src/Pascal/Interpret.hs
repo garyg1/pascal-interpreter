@@ -1,19 +1,19 @@
 module Pascal.Interpret where
 
-import Pascal.Data
-import Pascal.State as State
-import qualified Data.Map as Map
-import Control.Exception
+import           Control.Exception
+import qualified Data.Map          as Map
+import           Pascal.Data
+import           Pascal.State      as State
 
 interpret :: Program -> String
 interpret (Program _ _) = "Not implemented"
 
 valueOf :: PascalType -> State.Value
-valueOf TypeBool = State.BoolValue False
-valueOf TypeInt = State.IntValue 0
-valueOf TypeFloat = State.FloatValue 0.0
+valueOf TypeBool   = State.BoolValue False
+valueOf TypeInt    = State.IntValue 0
+valueOf TypeFloat  = State.FloatValue 0.0
 valueOf TypeString = State.StrValue ""
-valueOf _ = throw NotImplemented
+valueOf _          = throw NotImplemented
 
 eval :: State.State -> Expr -> (Maybe State.Value, State.State)
 eval state expr = case expr of
@@ -31,15 +31,15 @@ eval state expr = case expr of
 -- helpers for eval
 mustEval :: State.State -> Expr -> (State.Value, State.State)
 mustEval state expr = case eval state expr of
-    (Nothing, _) -> throw CannotEval
+    (Nothing, _)     -> throw CannotEval
     (Just v, state') -> (v, state')
 
 foldEval :: ([State.Value], State.State) -> Expr -> ([State.Value], State.State)
 foldEval (vals, s) e = let (val, s') = mustEval s e in ((val : vals), s')
-    
+
 combine :: String -> Maybe State.Value -> Maybe State.Value -> State.Value
-combine _ Nothing _ = throw CannotCombine
-combine _ _ Nothing = throw CannotCombine
+combine _ Nothing _            = throw CannotCombine
+combine _ _ Nothing            = throw CannotCombine
 combine op (Just v1) (Just v2) = combine' op v1 v2
 
 combine' :: String -> State.Value -> State.Value -> State.Value
@@ -51,7 +51,7 @@ combine' op v1 v2 = case (v1, v2) of
 evalFuncCall :: State.State -> FuncCall -> (Maybe State.Value, State.State)
 evalFuncCall state (FuncCall name args) = case State.mustFind state name of
     State.FuncValue funcOrProc -> evalFuncCall' state funcOrProc args
-    val -> throw $ IncorrectType name "function" val
+    val                        -> throw $ IncorrectType name "function" val
 
 evalFuncCall' :: State.State -> FuncOrProc -> [Expr] -> (Maybe State.Value, State.State)
 evalFuncCall' state (Func name params rType block) args = do
@@ -63,7 +63,7 @@ evalFuncCall' state (Proc name params block) args = (Nothing, state)
 prepArgs :: Id -> [State.Value] -> [VarDecl] -> [State.Scope]
 prepArgs name args params = case length args == length params of
     False -> throw $ IncorrectArgs name args params
-    _ -> 
+    _ ->
         let args' = map mustCast $ zip args params
             scope = foldl (\m v -> case v of
                 State.NamedValue id val -> Map.insert id val m
@@ -82,32 +82,32 @@ evalBlock state (Block decls stmts) = do
 evalDecls :: State.State -> Decl -> State.State
 evalDecls state decls = case decls of
     VarDecls vs -> foldl evalVarDecl state vs
-    _ -> throw NotImplemented
+    _           -> throw NotImplemented
 
 evalVarDecl :: State.State -> VarDecl -> State.State
 evalVarDecl state (Decl name t) = State.put state name $ valueOf t
 evalVarDecl state (DeclTypeDefn name t expr) = case eval state expr of
-    (Nothing, _) -> throw CannotCombine
+    (Nothing, _)     -> throw CannotCombine
     (Just v, state') -> State.put state' name v
 evalVarDecl state (DeclDefn name expr) = case eval state expr of
-    (Nothing, _) -> throw CannotCombine
+    (Nothing, _)     -> throw CannotCombine
     (Just v, state') -> State.put state' name v
 
 evalStmt :: State.State -> Stmt -> State.State
 evalStmt state stmt = case stmt of
     Stmts stmts -> foldl evalStmt state stmts
-    
+
     IfStmt ifExpr thenStmt -> evalStmt state $ IfElseStmt ifExpr thenStmt (Stmts [])
     IfElseStmt ifExpr thenStmt elseStmt -> case eval state ifExpr of
         (Just (State.BoolValue b), state') -> case b of
-            True -> evalStmt state' thenStmt
+            True  -> evalStmt state' thenStmt
             False -> evalStmt state' elseStmt
         (Just val, _) -> throw $ IncorrectType (Id "if expression") "Bool" val
         (Nothing, _) -> throw CannotCombine
-    
+
     AssignStmt name expr -> case eval state expr of
         (Just val, state') -> State.replace name val state'
-        (Nothing, _) -> throw CannotCombine
+        (Nothing, _)       -> throw CannotCombine
 
     WhileStmt expr whileStmt -> case eval state expr of
         (Just (State.BoolValue b), state') -> case b of
@@ -115,8 +115,8 @@ evalStmt state stmt = case stmt of
                 state'' = evalStmt state' whileStmt
                 in evalStmt state'' stmt
             False -> state'
-        (Just val, _) -> throw $ IncorrectType (Id "while expression") "Bool" val    
+        (Just val, _) -> throw $ IncorrectType (Id "while expression") "Bool" val
         (Nothing, _) -> throw CannotCombine
-    
+
     FuncCallStmt call -> let (_, state') = evalFuncCall state call in state'
-    
+

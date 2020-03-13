@@ -1,10 +1,10 @@
 module Main where
 
-import Pascal
-import System.Environment
-import Data.Char
-import qualified Data.Map as Map
-import qualified Pascal.State as State
+import           Data.Char
+import qualified Data.Map           as Map
+import           Pascal
+import qualified Pascal.State       as State
+import           System.Environment
 
 main :: IO ()
 main = do

@@ -1,38 +1,35 @@
 -- This file contains the data-structures for the AST
--- The role of the parser is to build the AST (Abstract Syntax Tree) 
+-- The role of the parser is to build the AST (Abstract Syntax Tree)
 
 module Pascal.Data where
 
-data Program
-    = Program Id Block
+data Program = Program Id Block
     deriving (Show, Eq)
 
-data Block
-    = Block [Decl] [Stmt]
+data Block = Block [Decl] [Stmt]
     deriving (Show, Eq)
 
-data Decl
-    = VarDecls [VarDecl]
+data Decl = VarDecls [VarDecl]
     | ConstDecls [VarDecl]
     | FuncDecl FuncOrProc
     deriving (Show, Eq)
 
-data VarDecl
-    = Decl Id PascalType
+data VarDecl = Decl Id PascalType
     | DeclTypeDefn Id PascalType Expr
     | DeclDefn Id Expr
     deriving (Show, Eq)
 
-data FuncOrProc
-    = Func Id [VarDecl] PascalType Block
+data FuncOrProc = Func Id [VarDecl] PascalType Block
     | Proc Id [VarDecl] Block
     deriving (Show, Eq)
 
-data PascalType = TypeBool | TypeInt | TypeFloat | TypeString
+data PascalType = TypeBool
+    | TypeInt
+    | TypeFloat
+    | TypeString
     deriving (Show, Eq)
 
-data Stmt
-    = Stmts [Stmt]
+data Stmt = Stmts [Stmt]
     | IfStmt Expr Stmt
     | IfElseStmt Expr Stmt Stmt
     | CaseStmt Expr [CaseDecl]
@@ -46,16 +43,13 @@ data Stmt
     | FuncCallStmt FuncCall
     deriving (Show, Eq)
 
-data CaseDecl
-    = CaseDecl [IntRange] Stmt
+data CaseDecl = CaseDecl [IntRange] Stmt
     deriving (Show, Eq)
 
-data IntRange
-    = IntRange Int Int
+data IntRange = IntRange Int Int
     deriving (Show, Eq)
-    
-data Expr
-    = UnaryExpr String Expr
+
+data Expr = UnaryExpr String Expr
     | BinaryExpr String Expr Expr
     | FuncCallExpr FuncCall
     | VarExpr Id
@@ -69,6 +63,5 @@ newtype Id
     = Id String
     deriving (Show, Eq, Ord)
 
-data FuncCall
-    = FuncCall Id [Expr] -- name, args
+data FuncCall = FuncCall Id [Expr]
     deriving (Show, Eq)

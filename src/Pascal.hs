@@ -7,7 +7,7 @@ module Pascal
 
 ----------------------------------------------------------------------------
 import           Pascal.Data
-import           Pascal.Wrapper
 import           Pascal.Interpret
+import           Pascal.Wrapper
 ----------------------------------------------------------------------------
 

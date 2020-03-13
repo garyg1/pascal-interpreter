@@ -17,6 +17,7 @@ data Decl
     | FuncDecl FuncOrProc
     deriving (Show, Eq)
 
+-- TODO denormalize PascalType on Decls into [Decl]
 data VarDecl
     = Decl Id PascalType
     | Decls [Id] PascalType

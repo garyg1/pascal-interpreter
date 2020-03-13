@@ -18,19 +18,40 @@ data Value
     deriving (Show, Eq)
 
 data InterpreterError
-  = UnknownSymbol Id
-  | CannotCombine
-  | IncorrectType Id String Value -- name expected actual
-  | NotImplemented
-  deriving (Show)
+    = UnknownSymbol Id
+    | CannotCombine
+    | IncorrectType Id String Value -- name expected actual
+    | NotImplemented
+    deriving (Show)
+
+data State
+    = State [Scope] Scope -- stack global
+    deriving (Show, Eq)
+
+type Scope = (Map.Map Id Value)
+
+
+mustFind :: State -> Id -> Value
+mustFind state id = case find state id of
+    Just a -> a
+    Nothing -> throw $ UnknownSymbol id
+
+find :: State -> Id -> Maybe Value
+find (State (scope : rest) global) name = case findScope scope name of
+    Just x -> Just x
+    Nothing -> find (State rest global) name
+find (State [] global) name = findScope global name
+
+findScope :: Scope -> Id -> Maybe Value
+findScope map name = case Map.lookup name map of
+    Just val -> Just val
+    Nothing -> Nothing
 
 instance Exception InterpreterError
 
-eval :: Map.Map Id Value -> Expr -> Maybe Value
+eval :: State -> Expr -> Maybe Value
 eval state expr = case expr of
-    VarExpr name -> case Map.lookup name state of
-        Just val -> Just $ NamedValue name val
-        Nothing -> throw $ UnknownSymbol name
+    VarExpr name -> Just $ mustFind state name
     IntExpr i -> Just $ IntValue i
     StrExpr s -> Just $ StrValue s
     FltExpr f -> Just $ FloatValue f
@@ -48,13 +69,11 @@ combine' op (NamedValue _ val1) v2 = combine' op val1 v2
 combine' op v1 (NamedValue _ val2) = combine' op v1 val2
 combine' op (IntValue i1) (IntValue i2) = IntValue $ i1 + i2
 
-evalFuncCall :: Map.Map Id Value -> FuncCall -> Maybe Value
-evalFuncCall state (FuncCall name args) = case Map.lookup name state of
-    Just (FuncValue fop) -> evalFuncCall' state fop args
-    Just val -> throw $ IncorrectType name "function" val
-    Nothing -> throw $ UnknownSymbol name
+evalFuncCall :: State -> FuncCall -> Maybe Value
+evalFuncCall state (FuncCall name args) = case mustFind state name of
+    FuncValue fop -> evalFuncCall' state fop args
+    val -> throw $ IncorrectType name "function" val
 
-evalFuncCall' :: Map.Map Id Value -> FuncOrProc -> [Expr] -> Maybe Value
-evalFuncCall' state fop args = case fop of
-    Func name params rType block -> Nothing
-    Proc name params block -> Nothing
+evalFuncCall' :: State -> FuncOrProc -> [Expr] -> Maybe Value
+evalFuncCall' state (Func name params rType block) args = Nothing
+evalFuncCall' state (Proc name params block) args = Nothing

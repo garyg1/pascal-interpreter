@@ -13,7 +13,7 @@ main = do
     -- let expr = BinaryExpr "+" (BinaryExpr "*" (VarExpr $ Id "gary") (IntExpr 1)) (FltExpr 1.5)
     let
         expr = BinaryExpr "+" (IntExpr 1) (VarExpr $ Id "gary")
-        state = Map.insert (Id "gary") (IntValue 2) Map.empty
+        state = State [(Map.insert (Id "gary") (IntValue 2) Map.empty)] Map.empty
         in print $ eval state expr
     -- case parseString $ map toLower contents of
     --     Right p -> print $ interpret p

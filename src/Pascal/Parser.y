@@ -102,10 +102,10 @@ DeclSection :: {Decl}
 -- used for both const and var
 VarDecls :: {[VarDecl]}
     :                           { [] }
-    | VarDecl ';' VarDecls      { $1 : $3 }
+    | VarDecl ';' VarDecls      { $1 ++ $3 }
 
-VarDecl :: {VarDecl}
-    : DeclDefn                  { $1 }
+VarDecl :: {[VarDecl]}
+    : DeclDefn                  { [$1] }
     | Decl                      { $1 }
 
 -- declaration with inital value
@@ -114,9 +114,9 @@ DeclDefn :: {VarDecl}
     | ID '=' Expr               { DeclDefn (Id $1) $3 }
 
 -- declaration with no initial value
-Decl :: {VarDecl}
-    : ID ':' Type               { Decl (Id $1) $3 }
-    | IdList ':' Type           { Decls $1 $3 }
+Decl :: {[VarDecl]}
+    : ID ':' Type               { [Decl (Id $1) $3] }
+    | IdList ':' Type           { map (\x -> Decl x $3) $1 }
 
 Type :: {PascalType}
     : 'double'                  { TypeFloat }
@@ -136,10 +136,10 @@ Proc :: {FuncOrProc}
 
 ParamList :: {[VarDecl]}
     : { [] }
-    | Decl                      { [$1] }
-    | 'var' Decl                { [$2] }
-    | Decl ';' ParamList        { $1 : $3 }
-    | 'var' Decl ';' ParamList  { $2 : $4 }
+    | Decl                      { $1 }
+    | 'var' Decl                { $2 }
+    | Decl ';' ParamList        { $1 ++ $3 }
+    | 'var' Decl ';' ParamList  { $2 ++ $4 }
 
 Stmt :: {Stmt}
     : CompoundStmt              { Stmts $1 }

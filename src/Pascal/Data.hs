@@ -17,10 +17,8 @@ data Decl
     | FuncDecl FuncOrProc
     deriving (Show, Eq)
 
--- TODO denormalize PascalType on Decls into [Decl]
 data VarDecl
     = Decl Id PascalType
-    | Decls [Id] PascalType
     | DeclTypeDefn Id PascalType Expr
     | DeclDefn Id Expr
     deriving (Show, Eq)
@@ -30,11 +28,7 @@ data FuncOrProc
     | Proc Id [VarDecl] Block
     deriving (Show, Eq)
 
-data PascalType
-    = TypeBool
-    | TypeInt
-    | TypeFloat
-    | TypeString
+data PascalType = TypeBool | TypeInt | TypeFloat | TypeString
     deriving (Show, Eq)
 
 data Stmt
@@ -51,7 +45,6 @@ data Stmt
     | AssignStmt Id Expr
     | FuncCallStmt FuncCall
     deriving (Show, Eq)
-
 
 data CaseDecl
     = CaseDecl [IntRange] Stmt

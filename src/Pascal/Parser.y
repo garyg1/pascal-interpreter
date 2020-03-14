@@ -204,7 +204,7 @@ Args :: {[Expr]}
 
 Expr :: {Expr}
     : ID                { VarExpr $ Id $1 }
-    | strlit            { StrExpr $1 }
+    | strlit            { StrExpr $ tail . init $ $1 }
     | floatlit          { FltExpr $1 }
     | 'true'            { BoolExpr True }
     | 'false'           { BoolExpr False }

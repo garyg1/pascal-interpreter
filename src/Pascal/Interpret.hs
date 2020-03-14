@@ -28,7 +28,6 @@ eval state expr = case expr of
         (v2, state'') = eval state' b2
         in (Just (combine op v1 v2), state)
 
--- helpers for eval
 mustEval :: State.State -> Expr -> (State.Value, State.State)
 mustEval state expr = case eval state expr of
     (Nothing, _)     -> throw CannotEval
@@ -46,7 +45,35 @@ combine' :: String -> State.Value -> State.Value -> State.Value
 combine' op (State.NamedValue _ v1') v2 = combine' op v1' v2
 combine' op v1 (State.NamedValue _ v2') = combine' op v1 v2'
 combine' op v1 v2 = case (v1, v2) of
-    (State.IntValue i1, State.IntValue i2) -> State.IntValue $ i1 + i2
+    (State.IntValue i1, State.IntValue i2) -> case op of
+        "+" -> State.IntValue $ i1 + i2
+        "*" -> State.IntValue $ i1 * i2
+        "-" -> State.IntValue $ i1 - i2
+    (State.FloatValue f1, State.FloatValue f2) -> case op of
+        "+" -> State.FloatValue $ f1 + f2
+        "*" -> State.FloatValue $ f1 * f2
+        "-" -> State.FloatValue $ f1 - f2
+        "/" -> State.FloatValue $ f1 / f2
+    (State.StrValue s1, State.StrValue s2) -> case op of
+        "+" -> State.StrValue $ s1 ++ s2
+    (State.BoolValue b1, State.BoolValue b2) -> case op of
+        "and" -> State.BoolValue $ b1 && b2
+        "or"  -> State.BoolValue $ b1 || b2
+        "xor" -> State.BoolValue $ xor b1 b2
+    (_, _) -> case marshal (v1, v2) of
+        Just (v1', v2') -> combine' op v1' v2'
+        Nothing         -> throw CannotCombine
+
+marshal :: (State.Value, State.Value) -> Maybe (State.Value, State.Value)
+marshal (v1, v2) = case (v1, v2) of
+    (State.IntValue _, State.FloatValue _) -> Just (mustCast TypeFloat v1, v2)
+    (State.FloatValue _, State.IntValue _) -> Just (v1, mustCast TypeFloat v2)
+    (_, _) -> Nothing
+
+-- improved version of https://annevankesteren.nl/2007/02/haskell-xor
+xor :: Bool -> Bool -> Bool
+xor True a = not a
+xor _ a    = a
 
 evalFuncCall :: State.State -> FuncCall -> (Maybe State.Value, State.State)
 evalFuncCall state (FuncCall name args) = case State.mustFind state name of
@@ -56,8 +83,8 @@ evalFuncCall state (FuncCall name args) = case State.mustFind state name of
 evalFuncCall' :: State.State -> FuncOrProc -> [Expr] -> (Maybe State.Value, State.State)
 evalFuncCall' state (Func name params rType block) args = do
     let (args', state') = foldl foldEval ([], state) $ reverse args
-        innerState = evalBlock (State.State (prepArgs name args' params) (global state')) block
-        state'' = (State.State (stack state') (global innerState))
+        innerState  = evalBlock (State.State (prepArgs name args' params) (global state')) block
+        state''     = (State.State (stack state') (global innerState))
         in (Nothing, state'')
 evalFuncCall' state (Proc name params block) args = throw NotImplemented
 
@@ -74,15 +101,27 @@ prepArgs name args params = case length args == length params of
 
 mustCastArg :: (State.Value, VarDecl) -> State.Value
 mustCastArg (val, decl) = let
-    name' = (name decl)
-    in case (val, varType decl) of
-        (State.NamedValue _ val', _)       -> mustCastArg (val', decl)
-        (State.BoolValue val', TypeBool)   -> State.NamedValue name' $ State.BoolValue val'
-        (State.IntValue val', TypeInt)     -> State.NamedValue name' $ State.IntValue val'
-        (State.FloatValue val', TypeFloat) -> State.NamedValue name' $ State.FloatValue val'
-        (State.StrValue val', TypeString)  -> State.NamedValue name' $ State.StrValue val'
-        (State.IntValue val', TypeFloat)   -> State.NamedValue name' $ State.FloatValue $ fromIntegral val'
-        (val', type')                      -> throw $ IncorrectType name' (show type') val'
+    name' = name decl
+    type' = varType decl
+    val' = cast type' val
+    in case val' of
+        Just v  -> State.NamedValue name' v
+        Nothing -> throw $ IncorrectType name' (show type') val
+
+mustCast :: PascalType -> State.Value -> State.Value
+mustCast type' val = case cast type' val of
+    Just v  -> v
+    Nothing -> throw $ IncorrectType (Id "unknown") (show type') val
+
+cast :: PascalType -> State.Value -> Maybe State.Value
+cast type' val = case (val, type') of
+    (State.NamedValue _ val', _)       -> cast type' val'
+    (State.BoolValue val', TypeBool)   -> Just $ State.BoolValue val'
+    (State.IntValue val', TypeInt)     -> Just $ State.IntValue val'
+    (State.IntValue val', TypeFloat)   -> Just $ State.FloatValue $ fromIntegral val'
+    (State.FloatValue val', TypeFloat) -> Just $ State.FloatValue val'
+    (State.StrValue val', TypeString)  -> Just $ State.StrValue val'
+    (_, _) -> Nothing
 
 evalBlock :: State.State -> Block -> State.State
 evalBlock state (Block decls stmts) = do

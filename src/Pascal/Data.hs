@@ -79,8 +79,13 @@ data Expr = UnaryExpr String Expr
     deriving (Show, Eq)
 
 newtype Id
-    = Id String
-    deriving (Show, Eq, Ord)
+    = Id {
+        toString :: String
+    }
+    deriving (Eq, Ord)
+
+instance Show Id where
+    show id = "'Id: " ++ (toString id) ++ "'"
 
 data FuncCall = FuncCall Id [Expr]
     deriving (Show, Eq)

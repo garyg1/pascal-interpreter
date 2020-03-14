@@ -22,6 +22,5 @@ main = do
     --     in print $ evalBlock state block
     case parseString $ map toLower contents of
         Right p -> do
-            print $ show p
-            print $ interpret p
+            putStrLn $ interpret p
         Left err -> print err

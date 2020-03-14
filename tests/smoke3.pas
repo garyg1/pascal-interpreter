@@ -1,15 +1,12 @@
 program smoke3;
 
-function f(b, c : integer; d : double): integer;
+function fact(n : integer): integer;
 begin
-    a := 10;
+    if n <= 1 then fact := 1
+    else fact := n * fact(n - 1);
 end;
 
-var a = 1;
-    b : string = 'asdf';
+var a: integer;
 begin
-    a := a + 1;
-    a := a + 1;
-    f(1, 2, 3.0);
-    b := 'b' + 'c';
+    a := fact(4);
 end.

@@ -17,7 +17,7 @@ valueOf _          = throw NotImplemented
 
 eval :: State.State -> Expr -> (Maybe State.Value, State.State)
 eval state expr = case expr of
-    VarExpr name -> (Just (State.mustFind state name), state)
+    VarExpr name -> (Just (State.NamedValue name $ State.mustFind state name), state)
     IntExpr i -> (Just (State.IntValue i), state)
     StrExpr s -> (Just (State.StrValue s), state)
     FltExpr f -> (Just (State.FloatValue f), state)
@@ -26,7 +26,7 @@ eval state expr = case expr of
     BinaryExpr op b1 b2 -> let
         (v1, state') = eval state b1
         (v2, state'') = eval state' b2
-        in (Just (combine op v1 v2), state)
+        in (Just (combine state op v1 v2), state)
 
 mustEval :: State.State -> Expr -> (State.Value, State.State)
 mustEval state expr = case eval state expr of
@@ -36,19 +36,25 @@ mustEval state expr = case eval state expr of
 foldEval :: ([State.Value], State.State) -> Expr -> ([State.Value], State.State)
 foldEval (vals, s) e = let (val, s') = mustEval s e in ((val : vals), s')
 
-combine :: String -> Maybe State.Value -> Maybe State.Value -> State.Value
-combine _ Nothing _            = throw CannotCombine
-combine _ _ Nothing            = throw CannotCombine
-combine op (Just v1) (Just v2) = combine' op v1 v2
+combine :: State.State -> String -> Maybe State.Value -> Maybe State.Value -> State.Value
+combine _ _ Nothing _            = throw CannotCombine
+combine _ _ _ Nothing            = throw CannotCombine
+combine state op (Just v1) (Just v2) = combine' state op v1 v2
 
-combine' :: String -> State.Value -> State.Value -> State.Value
-combine' op (State.NamedValue _ v1') v2 = combine' op v1' v2
-combine' op v1 (State.NamedValue _ v2') = combine' op v1 v2'
-combine' op v1 v2 = case (v1, v2) of
+combine' :: State.State -> String -> State.Value -> State.Value -> State.Value
+combine' state op (State.NamedValue _ v1') v2 = combine' state op v1' v2
+combine' state op v1 (State.NamedValue _ v2') = combine' state op v1 v2'
+combine' state op v1 v2 = case (v1, v2) of
     (State.IntValue i1, State.IntValue i2) -> case op of
         "+" -> State.IntValue $ i1 + i2
         "*" -> State.IntValue $ i1 * i2
         "-" -> State.IntValue $ i1 - i2
+        "=" -> State.BoolValue $ i1 == i2
+        "<>" -> State.BoolValue $ not $ i1 == i2
+        ">" -> State.BoolValue $ i1 > i2
+        "<" -> State.BoolValue $ i1 < i2
+        "<=" -> State.BoolValue $ i1 <= i2
+        ">=" -> State.BoolValue $ i1 <= i2
     (State.FloatValue f1, State.FloatValue f2) -> case op of
         "+" -> State.FloatValue $ f1 + f2
         "*" -> State.FloatValue $ f1 * f2
@@ -60,14 +66,20 @@ combine' op v1 v2 = case (v1, v2) of
         "and" -> State.BoolValue $ b1 && b2
         "or"  -> State.BoolValue $ b1 || b2
         "xor" -> State.BoolValue $ xor b1 b2
-    (_, _) -> case marshal (v1, v2) of
-        Just (v1', v2') -> combine' op v1' v2'
+    (_, _) -> case marshal state (v1, v2) of
+        Just (v1', v2') -> combine' state op v1' v2'
         Nothing         -> throw CannotCombine
 
-marshal :: (State.Value, State.Value) -> Maybe (State.Value, State.Value)
-marshal (v1, v2) = case (v1, v2) of
+marshal :: State.State -> (State.Value, State.Value) -> Maybe (State.Value, State.Value)
+marshal state (v1, v2) = case (v1, v2) of
     (State.IntValue _, State.FloatValue _) -> Just (mustCast TypeFloat v1, v2)
     (State.FloatValue _, State.IntValue _) -> Just (v1, mustCast TypeFloat v2)
+    (State.FuncValue f, _)                 -> let
+        retName = Id $ ".retval" ++ (toString . fname $ f)
+        in marshal state (State.mustFind state retName, v2)
+    (_, State.FuncValue f)                 -> let
+        retName = Id $ ".retval" ++ (toString . fname $ f)
+        in marshal state (v1, State.mustFind state retName)         
     (_, _) -> Nothing
 
 -- improved version of https://annevankesteren.nl/2007/02/haskell-xor
@@ -78,14 +90,18 @@ xor _ a    = a
 evalFuncCall :: State.State -> FuncCall -> (Maybe State.Value, State.State)
 evalFuncCall state (FuncCall name args) = case State.mustFind state name of
     State.FuncValue funcOrProc -> evalFuncCall' state funcOrProc args
-    val                        -> throw $ IncorrectType name "function" val
+    val -> throw $ IncorrectType name "function" val
 
 evalFuncCall' :: State.State -> FuncOrProc -> [Expr] -> (Maybe State.Value, State.State)
 evalFuncCall' state (Func name params rType block) args = do
     let (args', state') = foldl foldEval ([], state) $ reverse args
-        innerState  = evalBlock (State.State (prepArgs name args' params) (global state')) block
-        state''     = (State.State (stack state') (global innerState))
-        in (Nothing, state'')
+        retName      = Id $ ".retval" ++ (toString name)
+        innerState   = State.State (prepArgs name args' params) (global state')
+        innerState'  = State.put innerState retName (valueOf rType)
+        innerState'' = evalBlock innerState' block
+        state''      = (State.State (stack state') (global innerState))
+        retVal      = State.find innerState'' retName
+        in (retVal, state'')
 evalFuncCall' state (Proc name params block) args = throw NotImplemented
 
 prepArgs :: Id -> [State.Value] -> [VarDecl] -> [State.Scope]
@@ -155,9 +171,19 @@ evalStmt state stmt = case stmt of
         (Just val, _) -> throw $ IncorrectType (Id "if expression") "Bool" val
         (Nothing, _) -> throw CannotCombine
 
-    AssignStmt name expr -> case eval state expr of
-        (Just val, state') -> State.replace name val state'
-        (Nothing, _)       -> throw CannotCombine
+    AssignStmt name expr -> let
+        (val, state') = mustEval state expr
+        valToAssign = case val of
+            NamedValue _ inner -> inner
+            _ -> val
+        in case State.mustFind state' name of
+            (FuncValue _) -> case valToAssign of
+                -- assign func to func
+                FuncValue _ -> State.replace name valToAssign state'
+                _ -> -- assign value to return value
+                    let retName = Id $ ".retval" ++ (toString name)
+                    in State.replace retName (NamedValue retName valToAssign) state'
+            _ -> State.replace name (NamedValue name valToAssign) state'
 
     WhileStmt expr whileStmt -> case eval state expr of
         (Just (State.BoolValue b), state') -> case b of

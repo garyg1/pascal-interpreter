@@ -6,7 +6,7 @@ import           Pascal.Data
 import           Pascal.State      as State
 
 interpret :: Program -> String
-interpret (Program _ _) = "Not implemented"
+interpret (Program _ block) = show $ evalBlock State.new block
 
 valueOf :: PascalType -> State.Value
 valueOf TypeBool   = State.BoolValue False
@@ -55,33 +55,44 @@ evalFuncCall state (FuncCall name args) = case State.mustFind state name of
 
 evalFuncCall' :: State.State -> FuncOrProc -> [Expr] -> (Maybe State.Value, State.State)
 evalFuncCall' state (Func name params rType block) args = do
-    let (args', state') = foldl foldEval ([], state) args
-        innerState = evalBlock (State.State (prepArgs name args' params) (global state)) block
-        in (Nothing, state')
-evalFuncCall' state (Proc name params block) args = (Nothing, state)
+    let (args', state') = foldl foldEval ([], state) $ reverse args
+        innerState = evalBlock (State.State (prepArgs name args' params) (global state')) block
+        state'' = (State.State (stack state') (global innerState))
+        in (Nothing, state'')
+evalFuncCall' state (Proc name params block) args = throw NotImplemented
 
 prepArgs :: Id -> [State.Value] -> [VarDecl] -> [State.Scope]
 prepArgs name args params = case length args == length params of
     False -> throw $ IncorrectArgs name args params
     _ ->
-        let args' = map mustCast $ zip args params
+        let args' = map mustCastArg $ zip args params
             scope = foldl (\m v -> case v of
                 State.NamedValue id val -> Map.insert id val m
-                _ -> throw $ InternalError "Expected State.NamedValue from mustCase"
+                _ -> throw $ InternalError "Expected State.NamedValue from castArg"
                 ) Map.empty args'
             in [scope]
 
-mustCast :: (State.Value, VarDecl) -> State.Value
-mustCast (_, _) = throw NotImplemented
+mustCastArg :: (State.Value, VarDecl) -> State.Value
+mustCastArg (val, decl) = let
+    name' = (name decl)
+    in case (val, varType decl) of
+        (State.NamedValue _ val', _)       -> mustCastArg (val', decl)
+        (State.BoolValue val', TypeBool)   -> State.NamedValue name' $ State.BoolValue val'
+        (State.IntValue val', TypeInt)     -> State.NamedValue name' $ State.IntValue val'
+        (State.FloatValue val', TypeFloat) -> State.NamedValue name' $ State.FloatValue val'
+        (State.StrValue val', TypeString)  -> State.NamedValue name' $ State.StrValue val'
+        (State.IntValue val', TypeFloat)   -> State.NamedValue name' $ State.FloatValue $ fromIntegral val'
+        (val', type')                      -> throw $ IncorrectType name' (show type') val'
 
 evalBlock :: State.State -> Block -> State.State
 evalBlock state (Block decls stmts) = do
-    let newState = foldl evalDecls state decls
-        in foldl evalStmt newState stmts
+    let state' = foldl evalDecls state decls
+        in foldl evalStmt state' stmts
 
 evalDecls :: State.State -> Decl -> State.State
 evalDecls state decls = case decls of
     VarDecls vs -> foldl evalVarDecl state vs
+    FuncDecl f  -> State.put state (fname f) (FuncValue f)
     _           -> throw NotImplemented
 
 evalVarDecl :: State.State -> VarDecl -> State.State

@@ -59,3 +59,6 @@ replace name value (State (scope : rest) global) = case findScope scope name of
     Just x  -> State ((Map.insert name value scope) : rest) global
     Nothing -> push scope $ replace name value $ State rest global
 replace name value (State [] global) = State [] $ Map.insert name value global
+
+new :: State
+new = State [] Map.empty

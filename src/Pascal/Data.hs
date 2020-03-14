@@ -14,13 +14,32 @@ data Decl = VarDecls [VarDecl]
     | FuncDecl FuncOrProc
     deriving (Show, Eq)
 
-data VarDecl = Decl Id PascalType
-    | DeclTypeDefn Id PascalType Expr
-    | DeclDefn Id Expr
+data VarDecl = Decl
+    { name    :: Id
+    , varType :: PascalType
+    }
+    | DeclTypeDefn
+    { name    :: Id
+    , varType :: PascalType
+    , expr    :: Expr
+    }
+    | DeclDefn
+    { name :: Id
+    , expr :: Expr
+    }
     deriving (Show, Eq)
 
-data FuncOrProc = Func Id [VarDecl] PascalType Block
-    | Proc Id [VarDecl] Block
+data FuncOrProc = Func
+    { fname       :: Id
+    , decls      :: [VarDecl]
+    , returnType :: PascalType
+    , block      :: Block
+    }
+    | Proc
+    { fname  :: Id
+    , decls :: [VarDecl]
+    , block :: Block
+    }
     deriving (Show, Eq)
 
 data PascalType = TypeBool

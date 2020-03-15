@@ -27,11 +27,12 @@ executable Pascal
                      , Pascal.Wrapper
                      , Pascal.State
   -- other-extensions:    
-  build-depends:       base >=4.7
+  build-depends:       base >= 4.7
                       , bytestring
                       , array
                       , hspec
                       , containers
+                      , mtl
 
   hs-source-dirs:      src
   build-tools:         happy, alex

@@ -42,12 +42,6 @@ data FuncOrProc = Func
     }
     deriving (Show, Eq)
 
-data PascalType = TypeBool
-    | TypeInt
-    | TypeFloat
-    | TypeString
-    deriving (Show, Eq)
-
 data Stmt = Stmts [Stmt]
     | IfStmt Expr Stmt
     | IfElseStmt Expr Stmt Stmt
@@ -88,4 +82,10 @@ instance Show Id where
     show id = "'Id: " ++ (toString id) ++ "'"
 
 data FuncCall = FuncCall Id [Expr]
+    deriving (Show, Eq)
+
+data PascalType = TypeBool
+    | TypeInt
+    | TypeFloat
+    | TypeString
     deriving (Show, Eq)

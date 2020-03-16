@@ -15,8 +15,8 @@ interpret (Program _ block) = do
 
 visitBlock :: Block -> S.AppState ()
 visitBlock (Block decls stmts) = do
-    mapM visitDecl decls
-    mapM visitStmt stmts
+    mapM_ visitDecl decls
+    mapM_ visitStmt stmts
     return ()
 
 visitDecl :: Decl -> S.AppState ()
@@ -26,7 +26,7 @@ visitDecl decl = do
         FuncDecl func -> visitFuncDecl func
     return ()
 
-visitVarDecl :: VarDecl -> S.AppState()
+visitVarDecl :: VarDecl -> S.AppState ()
 visitVarDecl decl = do
     case decl of
         Decl name varType -> S.declare name $ S.valueOf varType
@@ -35,7 +35,7 @@ visitVarDecl decl = do
             S.declare (name decl) $ must val
 
 visitFuncDecl :: FuncOrProc -> S.AppState ()
-visitFuncDecl func = do S.declare (fname func) (S.FuncValue func)
+visitFuncDecl func = S.declare (fname func) (S.FuncValue func)
 
 visitStmt :: Stmt -> S.AppState ()
 visitStmt stmt = case stmt of
@@ -92,15 +92,16 @@ visitFuncCall (FuncCall fname exprs) = do
         args' = map must args
         in do
             st <- get
-            S.discardLocal
             S.pushEmpty
             mapM_ (\(a, p) -> do
                 S.overwrite (name p) a
                 ) $ zip args' (params func)
-            S.overwrite returnName (valueOf $ returnType func)
+            if (returnType func) /= TypeNone
+                then S.overwrite returnName (valueOf $ returnType func)
+                else return ()
             visitBlock (block func)
             rv <- S.find returnName
-            S.setLocal st
+            S.pop
             return rv
 
 combine :: String -> S.Value -> S.Value -> S.AppState (S.Value)
@@ -156,8 +157,8 @@ marshal (v1, v2) = case (v1, v2) of
     (S.FuncValue f, _) -> do
         v1' <- S.find $ rvName f
         marshal (must v1', v2)
-    (_, S.FuncValue f) -> do
-        v2' <- S.find $ rvName f
+    (_, S.FuncValue g) -> do
+        v2' <- S.find $ rvName g
         marshal (v1, must v2')
 
     (S.IntValue _, S.FloatValue _) -> return $ Just (must (cast TypeFloat v1), v2)

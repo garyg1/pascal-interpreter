@@ -35,11 +35,6 @@ data FuncOrProc = Func
     , returnType :: PascalType
     , block      :: Block
     }
-    | Proc
-    { fname  :: Id
-    , params :: [VarDecl]
-    , block :: Block
-    }
     deriving (Show, Eq)
 
 data Stmt = Stmts [Stmt]
@@ -89,4 +84,5 @@ data PascalType = TypeBool
     | TypeFloat
     | TypeString
     | TypeFunc
+    | TypeNone -- unused: for procedure return types only
     deriving (Show, Eq)

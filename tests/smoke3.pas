@@ -1,12 +1,24 @@
 program smoke3;
 
-function fact(n : integer): integer;
+function basecase(): integer;
 begin
-    if n <= 1 then fact := 1
-    else fact := n * fact(n - 1);
+    basecase := 1;
+end;
+
+
+function fact(n : integer): integer;
+var d: integer = n - 1;
+begin
+    if n <= 1 then fact := basecase()
+    else fact := n * fact(d);
+end;
+
+procedure temp(n : integer);
+begin
+    a := fact(n);
 end;
 
 var a: integer;
 begin
-    a := fact(4);
+    temp(5);
 end.

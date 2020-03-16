@@ -2,6 +2,7 @@ module Pascal.Interpret where
 
 import           Control.Exception
 import           Control.Monad.State
+import           Data.Char
 import qualified Data.Map            as Map
 import           Pascal.Data
 import           Pascal.State        as S
@@ -9,9 +10,45 @@ import           System.IO
 
 interpret :: Program -> S.AppState ()
 interpret (Program _ block) = do
-    liftIO $ do
-        putStrLn "Hello, world!"
+    -- declare native functions
+    S.overwrite (Id "writeln") $ NativeFuncValue $ NativeFunc (\args -> liftIO $ do
+        mapM_ (\arg -> print arg) args
+        return Nothing
+        )
+    S.overwrite (Id "readln") $ NativeFuncValue $ NativeFunc (\args -> do
+        if not $ all _isvar args
+            then throw $ S.VariableExpected "readln"
+            else return ()
+        foldM_ (\(line, shouldFlush) (S.NamedValue name val) -> do
+            line <- if shouldFlush then liftIO getLine else return line
+            case S.typeOf val of
+                TypeString -> do
+                    S.overwrite name $ S.NamedValue name $ S.StrValue line
+                    return ("", True)
+                type' -> do
+                    S.overwrite name $ S.NamedValue name $ case type' of
+                        TypeInt   -> S.IntValue $ read word
+                        TypeFloat -> S.FloatValue $ read word
+                        TypeBool  -> throw $ CannotRead TypeBool
+                    return (rest, False)
+                    where (word, rest) = splitAtSpace line
+                _ -> throw S.NotImplemented
+            ) ("", True) args
+        return Nothing
+        )
     visitBlock block
+
+-- partially inspired by https://stackoverflow.com/q/40297001/8887313
+splitAtSpace :: [Char] -> ([Char], [Char])
+splitAtSpace (' ' : after) = ([], after)
+splitAtSpace (x : xs) = let
+    (rest, after) = splitAtSpace xs
+    in (x : rest, after)
+splitAtSpace [] = ([], [])
+
+_isvar :: S.Value -> Bool
+_isvar (S.NamedValue _ _) = True
+_isvar _                  = False
 
 visitBlock :: Block -> S.AppState ()
 visitBlock (Block decls stmts) = do
@@ -22,20 +59,21 @@ visitBlock (Block decls stmts) = do
 visitDecl :: Decl -> S.AppState ()
 visitDecl decl = do
     case decl of
-        VarDecls vds  -> mapM_ visitVarDecl vds
-        FuncDecl func -> visitFuncDecl func
+        VarDecls vds   -> mapM_ (visitVarDecl False) vds
+        ConstDecls cds -> mapM_ (visitVarDecl True) cds
+        FuncDecl func  -> visitFuncDecl func
     return ()
 
-visitVarDecl :: VarDecl -> S.AppState ()
-visitVarDecl decl = do
+visitVarDecl :: Bool -> VarDecl -> S.AppState ()
+visitVarDecl isConst decl = do
     case decl of
-        Decl name varType -> S.declare name $ S.valueOf varType
+        Decl name varType -> S.declare isConst name $ S.NamedValue name $ S.valueOf varType
         _ -> do
             val <- evalExpr $ expr decl
-            S.declare (name decl) $ must val
+            S.declare isConst (name decl) $ S.NamedValue (name decl) $ must val
 
 visitFuncDecl :: FuncOrProc -> S.AppState ()
-visitFuncDecl func = S.declare (fname func) (S.FuncValue func)
+visitFuncDecl func = S.declare False (fname func) (S.FuncValue func)
 
 visitStmt :: Stmt -> S.AppState ()
 visitStmt stmt = case stmt of
@@ -59,7 +97,7 @@ visitStmt stmt = case stmt of
         case (lhs, must rhs) of
             (FuncValue f, FuncValue g) -> S.mustReplace name (FuncValue g)
             (FuncValue f, rhs')        -> let rName = rvName f in S.mustReplace rName rhs'
-            (_, rhs')                  -> S.mustReplace name rhs'
+            (_, rhs')                  -> S.mustReplace name (S.NamedValue name rhs')
     CaseStmt case' cases -> visitStmt $ CaseElseStmt case' cases (Stmts [])
     CaseElseStmt case' cases elseStmt -> do
         val <- evalExpr case'
@@ -72,9 +110,12 @@ visitStmt stmt = case stmt of
     _ -> throw S.NotImplemented
 
 doesMatch :: S.Value -> CaseDecl -> Bool
-doesMatch val (CaseDecl ranges _) = case val of
-    S.IntValue i -> any (\(IntRange lo hi) -> (lo <= i) && (i <= hi)) ranges
-    _            -> throw $ IncorrectType "case expression" TypeInt val
+doesMatch val range = let
+    (CaseDecl ranges _) = range
+    in case val of
+        S.NamedValue _ v -> doesMatch v range
+        S.IntValue i -> any (\(IntRange lo hi) -> (lo <= i) && (i <= hi)) ranges
+        _            -> throw $ IncorrectType "case expression" TypeInt val
 
 evalExpr :: Expr -> S.AppState (Maybe S.Value)
 evalExpr expr = do
@@ -96,21 +137,22 @@ visitFuncCall :: FuncCall -> S.AppState (Maybe S.Value)
 visitFuncCall (FuncCall fname exprs) = do
     defn <- S.find fname
     args <- mapM evalExpr exprs
-    let defn' = must $ cast TypeFunc $ must defn
-        func = S.getFunc defn'
-        returnName = rvName func
-        args' = map must args
-        in do
-            st <- get
-            S.pushEmpty
-            mapM_ (\(a, p) -> S.overwrite (name p) a) $ zip args' (params func)
-            if (returnType func) /= TypeNone
-                then S.overwrite returnName (valueOf $ returnType func)
-                else return ()
-            visitBlock (block func)
-            rv <- S.find returnName
-            S.pop
-            return rv
+    case must defn of
+        S.NativeFuncValue (NativeFunc fn) -> fn $ map must args
+        S.FuncValue func -> let
+            returnName = rvName func
+            args' = map must args
+            in do
+                st <- get
+                S.pushEmpty
+                mapM_ (\(a, p) -> S.overwrite (name p) a) $ zip args' (params func)
+                if (returnType func) /= TypeNone
+                    then S.overwrite returnName (valueOf $ returnType func)
+                    else return ()
+                visitBlock (block func)
+                rv <- S.find returnName
+                S.pop
+                return rv
 
 combine :: String -> S.Value -> S.Value -> S.AppState (S.Value)
 combine op (S.NamedValue _ v1') v2 = combine op v1' v2
@@ -153,7 +195,7 @@ combineToNum op n1 n2 = case op of
 
 combineToBool :: (Ord n, Eq n) => String -> n -> n -> Bool
 combineToBool op n1 n2 = case op of
-    "<>" -> not $ n1 == n2
+    "<>" -> n1 /= n2
     "="  -> n1 == n2
     ">"  -> n1 > n2
     "<"  -> n1 < n2

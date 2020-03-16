@@ -84,5 +84,6 @@ data PascalType = TypeBool
     | TypeFloat
     | TypeString
     | TypeFunc
+    | TypeNativeFunc
     | TypeNone -- unused: for procedure return types only
     deriving (Show, Eq)

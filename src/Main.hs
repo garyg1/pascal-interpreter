@@ -22,24 +22,4 @@ main = do
                 print st
         Left err -> throw $ S.InternalError $ show err
 
-    -- test monad stack
-    _ <- S.runApp $ do
-        S.overwrite (Id "myname") (S.StrValue "gary")
-        S.pushEmpty
-        S.overwrite (Id "myname") (S.StrValue "gary")
-        S.pushEmpty
-        liftIO $ do
-            putStr "Enter name: "
-            hFlush stdout
-        userName <- liftIO getLine
-        liftIO $ do
-            putStr "Enter value: "
-            hFlush stdout
-        value <- liftIO getLine
-        S.overwrite (Id userName) (S.StrValue value)
-        result <- S.mustFind (Id userName)
-        liftIO $ print result
-        return ()
-
-
     return ()

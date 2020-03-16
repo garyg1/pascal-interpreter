@@ -30,7 +30,7 @@ visitVarDecl :: VarDecl -> S.AppState ()
 visitVarDecl decl = do
     case decl of
         Decl name varType -> S.declare name $ S.valueOf varType
-        _      -> do
+        _ -> do
             val <- evalExpr $ expr decl
             S.declare (name decl) $ must val
 
@@ -39,6 +39,7 @@ visitFuncDecl func = S.declare (fname func) (S.FuncValue func)
 
 visitStmt :: Stmt -> S.AppState ()
 visitStmt stmt = case stmt of
+    Stmts stmts -> mapM_ visitStmt stmts
     IfStmt ifExpr thenStmt -> visitStmt $ IfElseStmt ifExpr thenStmt (Stmts [])
     IfElseStmt ifExpr thenStmt elseStmt -> do
         val <- evalExpr ifExpr
@@ -49,9 +50,7 @@ visitStmt stmt = case stmt of
     WhileStmt whileExpr doStmt -> do
         val <- evalExpr whileExpr
         case val of
-            Just (S.BoolValue True)  -> do
-                visitStmt doStmt
-                visitStmt stmt -- recurse
+            Just (S.BoolValue True)  -> mapM_ visitStmt [doStmt, stmt]
             Just (S.BoolValue False) -> return ()
             _                        -> throw $ S.IncorrectType "while condition" TypeBool $ must val
     AssignStmt name expr -> do
@@ -61,10 +60,21 @@ visitStmt stmt = case stmt of
             (FuncValue f, FuncValue g) -> S.mustReplace name (FuncValue g)
             (FuncValue f, rhs')        -> let rName = rvName f in S.mustReplace rName rhs'
             (_, rhs')                  -> S.mustReplace name rhs'
+    CaseStmt case' cases -> visitStmt $ CaseElseStmt case' cases (Stmts [])
+    CaseElseStmt case' cases elseStmt -> do
+        val <- evalExpr case'
+        case filter (doesMatch $ must val) cases of
+            ((CaseDecl _ thenStmt) : _) -> visitStmt thenStmt
+            []                          -> visitStmt elseStmt
     FuncCallStmt call -> do
         visitFuncCall call
         return ()
     _ -> throw S.NotImplemented
+
+doesMatch :: S.Value -> CaseDecl -> Bool
+doesMatch val (CaseDecl ranges _) = case val of
+    S.IntValue i -> any (\(IntRange lo hi) -> (lo <= i) && (i <= hi)) ranges
+    _            -> throw $ IncorrectType "case expression" TypeInt val
 
 evalExpr :: Expr -> S.AppState (Maybe S.Value)
 evalExpr expr = do
@@ -93,9 +103,7 @@ visitFuncCall (FuncCall fname exprs) = do
         in do
             st <- get
             S.pushEmpty
-            mapM_ (\(a, p) -> do
-                S.overwrite (name p) a
-                ) $ zip args' (params func)
+            mapM_ (\(a, p) -> S.overwrite (name p) a) $ zip args' (params func)
             if (returnType func) /= TypeNone
                 then S.overwrite returnName (valueOf $ returnType func)
                 else return ()
@@ -146,6 +154,7 @@ combineToNum op n1 n2 = case op of
 combineToBool :: (Ord n, Eq n) => String -> n -> n -> Bool
 combineToBool op n1 n2 = case op of
     "<>" -> not $ n1 == n2
+    "="  -> n1 == n2
     ">"  -> n1 > n2
     "<"  -> n1 < n2
     "<=" -> n1 <= n2

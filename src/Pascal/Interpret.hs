@@ -17,7 +17,7 @@ interpret (Program _ block) = do
         return Nothing
         )
     S.overwrite (Id "readln") $ NativeFuncValue $ NativeFunc (\args -> do
-        if not $ all _isvar args
+        if not $ all isvar args
             then throw $ S.VariableExpected "readln"
             else return ()
         foldM_ (\(line, shouldFlush) (S.NamedValue name val) -> do
@@ -39,17 +39,6 @@ interpret (Program _ block) = do
         )
     visitBlock block
 
--- partially inspired by https://stackoverflow.com/q/40297001/8887313
-splitAtSpace :: [Char] -> ([Char], [Char])
-splitAtSpace (' ' : after) = ([], after)
-splitAtSpace (x : xs) = let
-    (rest, after) = splitAtSpace xs
-    in (x : rest, after)
-splitAtSpace [] = ([], [])
-
-_isvar :: S.Value -> Bool
-_isvar (S.NamedValue _ _) = True
-_isvar _                  = False
 
 visitBlock :: Block -> S.AppState ()
 visitBlock (Block decls stmts) = do
@@ -132,15 +121,6 @@ visitForStmt isUp name start end doStmt = let
             ) (visitStmt doStmt)
         -- for loop variables cannot be const, so it's safe to unset the const-ness
         S.setConst False name
-        
-
-doesMatch :: S.Value -> CaseDecl -> Bool
-doesMatch val range = let
-    (CaseDecl ranges _) = range
-    in case val of
-        S.NamedValue _ v -> doesMatch v range
-        S.IntValue i -> any (\(IntRange lo hi) -> (lo <= i) && (i <= hi)) ranges
-        _            -> throw $ IncorrectType "case expression" TypeInt val
 
 evalExpr :: Expr -> S.AppState (Maybe S.Value)
 evalExpr expr = do
@@ -265,3 +245,23 @@ must :: Maybe a -> a
 must mv = case mv of
     Just v -> v
     _      -> throw S.CannotEval
+
+-- partially inspired by https://stackoverflow.com/q/40297001/8887313
+splitAtSpace :: [Char] -> ([Char], [Char])
+splitAtSpace (' ' : after) = ([], after)
+splitAtSpace (x : xs) = let
+    (rest, after) = splitAtSpace xs
+    in (x : rest, after)
+splitAtSpace [] = ([], [])
+
+isvar :: S.Value -> Bool
+isvar (S.NamedValue _ _) = True
+isvar _                  = False
+
+doesMatch :: S.Value -> CaseDecl -> Bool
+doesMatch val range = let
+    (CaseDecl ranges _) = range
+    in case val of
+        S.NamedValue _ v -> doesMatch v range
+        S.IntValue i -> any (\(IntRange lo hi) -> (lo <= i) && (i <= hi)) ranges
+        _            -> throw $ IncorrectType "case expression" TypeInt val

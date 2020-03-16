@@ -132,7 +132,7 @@ Func :: {FuncOrProc}
     : ID '(' ParamList ')' ':' Type ';' Block ';' { Func (Id $1) $3 $6 $8 }
 
 Proc :: {FuncOrProc}
-    : ID '(' ParamList ')' ';' Block ';' { Proc (Id $1) $3 $6 }
+    : ID '(' ParamList ')' ';' Block ';' { Func (Id $1) $3 TypeNone $6 }
 
 ParamList :: {[VarDecl]}
     : { [] }

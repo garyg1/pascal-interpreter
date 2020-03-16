@@ -31,21 +31,10 @@ data VarDecl = Decl
 
 data FuncOrProc = Func
     { fname       :: Id
-    , decls      :: [VarDecl]
+    , params      :: [VarDecl]
     , returnType :: PascalType
     , block      :: Block
     }
-    | Proc
-    { fname  :: Id
-    , decls :: [VarDecl]
-    , block :: Block
-    }
-    deriving (Show, Eq)
-
-data PascalType = TypeBool
-    | TypeInt
-    | TypeFloat
-    | TypeString
     deriving (Show, Eq)
 
 data Stmt = Stmts [Stmt]
@@ -88,4 +77,12 @@ instance Show Id where
     show id = "'Id: " ++ (toString id) ++ "'"
 
 data FuncCall = FuncCall Id [Expr]
+    deriving (Show, Eq)
+
+data PascalType = TypeBool
+    | TypeInt
+    | TypeFloat
+    | TypeString
+    | TypeFunc
+    | TypeNone -- unused: for procedure return types only
     deriving (Show, Eq)

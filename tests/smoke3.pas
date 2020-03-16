@@ -34,8 +34,14 @@ begin
         else result := '';
     end;
 
-    writeln(1, 2, 3, 4);
-    readln(x);
-    readln(y);
-    writeln(a, c, x, y, b, f, 'gary is cool', 'unnamed', 1.0);
+    for a := 1 to 10 do begin
+        writeln(a);
+    end;
+    a := 5;
+    for a := 10 downto 1 do writeln(a);
+
+    // writeln(1, 2, 3, 4);
+    // readln(x);
+    // readln(y);
+    // writeln(a, c, x, y, b, f, 'gary is cool', 'unnamed', 1.0);
 end.

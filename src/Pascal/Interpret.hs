@@ -1,6 +1,7 @@
 module Pascal.Interpret where
 
 import           Control.Exception
+import           Control.Monad.Loops
 import           Control.Monad.State
 import           Data.Char
 import qualified Data.Map            as Map
@@ -91,6 +92,8 @@ visitStmt stmt = case stmt of
             Just (S.BoolValue True)  -> mapM_ visitStmt [doStmt, stmt]
             Just (S.BoolValue False) -> return ()
             _                        -> throw $ S.IncorrectType "while condition" TypeBool $ must val
+    ForToStmt id e1 e2 st -> visitForStmt True id e1 e2 st
+    ForDownToStmt id e1 e2 st -> visitForStmt False id e1 e2 st
     AssignStmt name expr -> do
         rhs <- evalExpr expr
         lhs <- S.mustFind name
@@ -108,6 +111,28 @@ visitStmt stmt = case stmt of
         visitFuncCall call
         return ()
     _ -> throw S.NotImplemented
+
+
+-- TODO add break, continue
+visitForStmt :: Bool -> Id -> Expr -> Expr -> Stmt -> S.AppState ()
+visitForStmt isUp name start end doStmt = let
+    (inc, cmp) = if isUp then (1, (<=)) else (-1, (>=))
+    in do
+        startVal <- evalExpr start
+        endVal <- evalExpr end
+        S.mustFind name
+        S.mustReplace name $ S.IntValue $ ((S.getInt . must) startVal) - inc
+        let endVal' = (S.getInt . must) endVal in whileM_ (do
+                startVal' <- S.find name
+                S.setConst False name
+                let newVal = inc + (S.getInt . must) startVal' in do
+                    S.mustReplace name $ S.IntValue newVal
+                    S.setConst True name
+                    return $ cmp newVal endVal'
+            ) (visitStmt doStmt)
+        -- for loop variables cannot be const, so it's safe to unset the const-ness
+        S.setConst False name
+        
 
 doesMatch :: S.Value -> CaseDecl -> Bool
 doesMatch val range = let

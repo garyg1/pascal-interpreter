@@ -34,6 +34,7 @@ executable Pascal
                       , hspec
                       , containers
                       , mtl
+                      , monad-loops
 
   hs-source-dirs:      src
   build-tools:         happy, alex

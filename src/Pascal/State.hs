@@ -22,7 +22,9 @@ data InterpreterError = UnknownSymbol Id
     deriving (Show)
 instance Exception InterpreterError
 
-data Value = IntValue Int
+data Value = IntValue
+    { getInt :: Int
+    }
     | StrValue String
     | FloatValue Float
     | BoolValue Bool

@@ -4,7 +4,7 @@ import           Control.Exception
 import           Control.Monad.State
 import           Data.Char
 import           Pascal
-import qualified Pascal.State         as S
+import qualified Pascal.State        as S
 import           System.Environment
 import           System.IO
 

@@ -2,9 +2,9 @@ module Pascal.Interpret where
 
 import           Control.Exception
 import           Control.Monad.State
-import qualified Data.Map          as Map
+import qualified Data.Map            as Map
 import           Pascal.Data
-import           Pascal.State      as S
+import           Pascal.State        as S
 import           System.IO
 
 interpret :: Program -> S.AppState ()
@@ -46,27 +46,25 @@ visitStmt stmt = case stmt of
             Just (S.BoolValue True)  -> do visitStmt thenStmt
             Just (S.BoolValue False) -> do visitStmt elseStmt
             _                        -> throw $ S.IncorrectType "if condition" TypeBool $ must val
-
     WhileStmt whileExpr doStmt -> do
         val <- evalExpr whileExpr
         case val of
             Just (S.BoolValue True)  -> do
                 visitStmt doStmt
-                visitStmt stmt
+                visitStmt stmt -- recurse
             Just (S.BoolValue False) -> return ()
             _                        -> throw $ S.IncorrectType "while condition" TypeBool $ must val
-
     AssignStmt name expr -> do
-        val <- evalExpr expr
-        S.mustReplace name $ must val
-
+        rhs <- evalExpr expr
+        lhs <- S.mustFind name
+        case (lhs, must rhs) of
+            (FuncValue f, FuncValue g) -> S.mustReplace name (FuncValue g)
+            (FuncValue f, rhs')        -> let rName = rvName f in S.mustReplace rName rhs'
+            (_, rhs')                  -> S.mustReplace name rhs'
+    FuncCallStmt call -> do
+        visitFuncCall call
+        return ()
     _ -> throw S.NotImplemented
-
-
-must :: Maybe a -> a
-must mv = case mv of
-    Just v  -> v
-    Nothing -> throw CannotEval
 
 evalExpr :: Expr -> S.AppState (Maybe S.Value)
 evalExpr expr = do
@@ -81,33 +79,59 @@ evalExpr expr = do
             v2 <- evalExpr b2
             v3 <- combine op (must v1) (must v2)
             return $ Just v3
+        FuncCallExpr call   -> visitFuncCall call
         _                   -> throw S.NotImplemented
+
+visitFuncCall :: FuncCall -> S.AppState (Maybe S.Value)
+visitFuncCall (FuncCall fname exprs) = do
+    defn <- S.find fname
+    args <- mapM evalExpr exprs
+    let defn' = must $ cast TypeFunc $ must defn
+        func = S.getFunc defn'
+        returnName = rvName func
+        args' = map must args
+        in do
+            st <- get
+            S.discardLocal
+            S.pushEmpty
+            mapM_ (\(a, p) -> do
+                S.overwrite (name p) a
+                ) $ zip args' (params func)
+            S.overwrite returnName (valueOf $ returnType func)
+            visitBlock (block func)
+            rv <- S.find returnName
+            S.setLocal st
+            return rv
 
 combine :: String -> S.Value -> S.Value -> S.AppState (S.Value)
 combine op (S.NamedValue _ v1') v2 = combine op v1' v2
 combine op v1 (S.NamedValue _ v2') = combine op v1 v2'
 combine op v1 v2 = case (v1, v2) of
-    (S.IntValue i1, S.IntValue i2) -> return (case op of
-        "/" -> S.IntValue $ div i1 i2
-        _ | op `elem` ["+", "*", "-"] -> S.IntValue $ combineToNum op i1 i2
-          | otherwise                 -> S.BoolValue $ combineToBool op i1 i2
+    (S.IntValue i1, S.IntValue i2) -> return (
+        case op of
+            "/" -> S.IntValue $ div i1 i2
+            _   | op `elem` ["+", "*", "-"] -> S.IntValue $ combineToNum op i1 i2
+                | otherwise                 -> S.BoolValue $ combineToBool op i1 i2
         )
-    (S.FloatValue f1, S.FloatValue f2) -> return (case op of
-        "/" -> S.FloatValue $ f1 / f2
-        _ | op `elem` ["+", "*", "-", "/"] -> S.FloatValue $ combineToNum op f1 f2
-          | otherwise                      -> S.BoolValue $ combineToBool op f1 f2
+    (S.FloatValue f1, S.FloatValue f2) -> return (
+        case op of
+            "/" -> S.FloatValue $ f1 / f2
+            _   | op `elem` ["+", "*", "-", "/"] -> S.FloatValue $ combineToNum op f1 f2
+                | otherwise                      -> S.BoolValue $ combineToBool op f1 f2
         )
-    (S.StrValue s1, S.StrValue s2) -> return (case op of
-        "+" -> S.StrValue $ s1 ++ s2
+    (S.StrValue s1, S.StrValue s2) -> return (
+        case op of
+            "+" -> S.StrValue $ s1 ++ s2
         )
-    (S.BoolValue b1, S.BoolValue b2) -> return (case op of
-        "and" -> S.BoolValue $ b1 && b2
-        "or"  -> S.BoolValue $ b1 || b2
-        "xor" -> S.BoolValue $ xor b1 b2
+    (S.BoolValue b1, S.BoolValue b2) -> return $ S.BoolValue (
+        case op of
+            "and" -> b1 && b2
+            "or"  -> b1 || b2
+            "xor" -> xor b1 b2
         )
-    _ -> let
-        t' = marshal (v1, v2)
-        in case Nothing of
+    _ -> do
+        t1' <- marshal (v1, v2)
+        case t1' of
             Just (v1', v2') -> combine op v1' v2'
             Nothing         -> throw S.CannotCombine
 
@@ -152,9 +176,15 @@ rvName f = (Id $ ".retval" ++ (toString . fname $ f))
 cast :: PascalType -> S.Value -> Maybe S.Value
 cast type' val = case (val, type') of
     (S.NamedValue _ val', _)       -> cast type' val'
-    (S.BoolValue val', TypeBool)   -> Just $ S.BoolValue val'
-    (S.IntValue val', TypeInt)     -> Just $ S.IntValue val'
+    (S.BoolValue val', TypeBool)   -> Just val
+    (S.IntValue val', TypeInt)     -> Just val
     (S.IntValue val', TypeFloat)   -> Just $ S.FloatValue $ fromIntegral val'
-    (S.FloatValue val', TypeFloat) -> Just $ S.FloatValue val'
-    (S.StrValue val', TypeString)  -> Just $ S.StrValue val'
+    (S.FloatValue val', TypeFloat) -> Just val
+    (S.StrValue val', TypeString)  -> Just val
+    (S.FuncValue val', TypeFunc)   -> Just val
     (_, _)                         -> Nothing
+
+must :: Maybe a -> a
+must mv = case mv of
+    Just v -> v
+    _      -> throw S.CannotEval

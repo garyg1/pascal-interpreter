@@ -31,13 +31,13 @@ data VarDecl = Decl
 
 data FuncOrProc = Func
     { fname       :: Id
-    , decls      :: [VarDecl]
+    , params      :: [VarDecl]
     , returnType :: PascalType
     , block      :: Block
     }
     | Proc
     { fname  :: Id
-    , decls :: [VarDecl]
+    , params :: [VarDecl]
     , block :: Block
     }
     deriving (Show, Eq)
@@ -88,4 +88,5 @@ data PascalType = TypeBool
     | TypeInt
     | TypeFloat
     | TypeString
+    | TypeFunc
     deriving (Show, Eq)

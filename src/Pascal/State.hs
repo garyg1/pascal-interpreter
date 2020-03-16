@@ -25,7 +25,9 @@ data Value = IntValue Int
     | FloatValue Float
     | BoolValue Bool
     | NamedValue Id Value
-    | FuncValue FuncOrProc
+    | FuncValue {
+        getFunc :: FuncOrProc
+    }
     deriving (Show, Eq)
 
 valueOf :: PascalType -> Value
@@ -114,6 +116,12 @@ mustReplace' name val state = case state of
             global' = Map.insert name val global
             in Just $ PState [] global'
         Nothing -> Nothing
+
+discardLocal :: AppState ()
+discardLocal = state $ \(PState _ global) -> ((), PState [] global)
+
+setLocal :: PState -> AppState ()
+setLocal (PState local _) = state $ \(PState _ global) -> ((), PState local global)
 
 new :: PState
 new = PState [] Map.empty

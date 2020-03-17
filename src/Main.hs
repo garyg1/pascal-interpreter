@@ -17,9 +17,6 @@ main = do
     case parseString $ map toLower contents of
         Right p -> S.runApp $ do
             interpret p
-            st <- get
-            liftIO $ do
-                print st
         Left err -> throw $ S.InternalError $ show err
 
     return ()

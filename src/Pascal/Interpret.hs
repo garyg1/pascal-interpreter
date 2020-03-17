@@ -12,6 +12,11 @@ import           System.IO
 interpret :: Program -> S.AppState ()
 interpret (Program _ block) = do
     -- declare native functions
+    S.overwrite (Id "sqrt") $ nativeFuncFrom sqrt
+    S.overwrite (Id "sin") $ nativeFuncFrom sin
+    S.overwrite (Id "cos") $ nativeFuncFrom cos
+    S.overwrite (Id "exp") $ nativeFuncFrom exp
+    S.overwrite (Id "ln") $ nativeFuncFrom log
     S.overwrite (Id "writeln") $ NativeFuncValue $ NativeFunc (\args -> liftIO $ do
         mapM_ (\arg -> print arg) args
         return Nothing
@@ -39,6 +44,12 @@ interpret (Program _ block) = do
         )
     visitBlock block
 
+nativeFuncFrom :: (Float -> Float) -> S.Value
+nativeFuncFrom fn = S.NativeFuncValue $ S.NativeFunc $ \(arg : rest) ->
+    if length rest /= 0
+        then throw $ S.IncorrectArgs (Id "sqrt") (arg : rest) [Decl (Id "operand") TypeInt]
+        else let (S.FloatValue f) = must $ cast TypeFloat arg
+            in return $ Just $ S.FloatValue $ fn f
 
 visitBlock :: Block -> S.AppState ()
 visitBlock (Block decls stmts) = do

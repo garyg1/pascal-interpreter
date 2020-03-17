@@ -40,8 +40,5 @@ begin
     a := 5;
     for a := 10 downto 1 do writeln(a);
 
-    // writeln(1, 2, 3, 4);
-    // readln(x);
-    // readln(y);
-    // writeln(a, c, x, y, b, f, 'gary is cool', 'unnamed', 1.0);
+    writeln(ln(1), exp(1), cos(1), sin(1), sqrt(1));
 end.

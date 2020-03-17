@@ -35,10 +35,14 @@ begin
     end;
 
     for a := 1 to 10 do begin
+        if a = 5 then break;
         writeln(a);
     end;
-    a := 5;
-    for a := 10 downto 1 do writeln(a);
+    writeln(a);
+    for a := 10 downto 1 do 
+    begin
+        writeln(a);
+    end;
 
     writeln(ln(1), exp(1), cos(1), sin(1), sqrt(1));
 end.

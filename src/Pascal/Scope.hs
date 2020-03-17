@@ -7,7 +7,7 @@ import           Pascal.Data
 
 data ScopeError = UnknownSymbol Id
     | CannotAssignToConst
-    { name :: Id
+    { ename :: Id
     }
     deriving (Show)
 instance Exception ScopeError
@@ -19,7 +19,7 @@ data Scope a = Scope
     deriving (Show, Eq)
 
 find :: (Scope a) -> Id -> Maybe a
-find (Scope vs cs) name = case Map.lookup name vs of
+find (Scope vs _) name = case Map.lookup name vs of
     Just val -> Just val
     Nothing  -> Nothing
 

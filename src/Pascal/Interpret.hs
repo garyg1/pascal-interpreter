@@ -1,18 +1,14 @@
 module Pascal.Interpret where
 
 import           Control.Exception
-import           Control.Monad.Loops
-import           Control.Monad.State
-import           Data.Char
-import qualified Data.Map            as Map
+import           Control.Monad.Except
 import           Pascal.Data
-import           Pascal.State        as S
-import           System.IO
+import           Pascal.State         as S
 
 interpret :: Program -> S.AppState ()
-interpret (Program _ block) = do
+interpret (Program _ bl) = do
     declareNativeFunctions
-    visitBlock block
+    visitBlock bl
 
 declareNativeFunctions :: S.AppState ()
 declareNativeFunctions = do
@@ -30,19 +26,18 @@ declareNativeFunctions = do
             then throw $ S.VariableExpected "readln"
             else return ()
         foldM_ (\(line, shouldFlush) (S.NamedValue name val) -> do
-            line <- if shouldFlush then liftIO getLine else return line
+            line' <- if shouldFlush then liftIO getLine else return line
             case S.typeOf val of
                 TypeString -> do
-                    S.overwrite name $ S.NamedValue name $ S.StrValue line
+                    S.overwrite name $ S.NamedValue name $ S.StrValue line'
                     return ("", True)
                 type' -> do
                     S.overwrite name $ S.NamedValue name $ case type' of
                         TypeInt   -> S.IntValue $ read word
                         TypeFloat -> S.FloatValue $ read word
-                        TypeBool  -> throw $ CannotRead TypeBool
+                        otherType -> throw $ CannotRead otherType
                     return (rest, False)
-                    where (word, rest) = splitAtSpace line
-                _ -> throw S.NotImplemented
+                    where (word, rest) = splitAtSpace line'
             ) ("", True) args
         return Nothing
         )
@@ -71,17 +66,41 @@ visitDecl decl = do
 visitVarDecl :: Bool -> VarDecl -> S.AppState ()
 visitVarDecl isConst decl = do
     case decl of
-        Decl name varType -> S.declare isConst name $ S.NamedValue name $ S.valueOf varType
+        Decl name type' -> S.declare isConst name $ S.NamedValue name $ S.valueOf type'
         _ -> do
             val <- evalExpr $ expr decl
-            S.declare isConst (name decl) $ S.NamedValue (name decl) $ must val
+            S.declare isConst (dname decl) $ S.NamedValue (dname decl) $ must val
 
 visitFuncDecl :: FuncOrProc -> S.AppState ()
 visitFuncDecl func = S.declare False (fname func) (S.FuncValue func)
 
 visitStmt :: Stmt -> S.AppState ()
 visitStmt stmt = case stmt of
-    Stmts stmts -> mapM_ visitStmt stmts
+    AssignStmt name e -> do
+        rhs <- evalExpr e
+        lhs <- S.mustFind name
+        case (lhs, must rhs) of
+            (FuncValue _, FuncValue g) -> S.mustReplace name (FuncValue g)
+            (FuncValue f, rhs')        -> let rName = rvName f in S.mustReplace rName rhs'
+            (_, rhs')                  -> S.mustReplace name (S.NamedValue name rhs')
+
+    BreakStmt -> throwError S.Break
+    ContinueStmt -> throwError S.Continue
+
+    CaseStmt case' cases -> visitStmt $ CaseElseStmt case' cases (Stmts [])
+    CaseElseStmt case' cases elseStmt -> do
+        val <- evalExpr case'
+        case filter (doesMatch $ must val) cases of
+            ((CaseDecl _ thenStmt) : _) -> visitStmt thenStmt
+            []                          -> visitStmt elseStmt
+
+    ForToStmt cvarName e1 e2 st -> visitForStmt True cvarName e1 e2 st
+    ForDownToStmt cvarName e1 e2 st -> visitForStmt False cvarName e1 e2 st
+
+    FuncCallStmt call -> do
+        _ <- visitFuncCall call
+        return ()
+
     IfStmt ifExpr thenStmt -> visitStmt $ IfElseStmt ifExpr thenStmt (Stmts [])
     IfElseStmt ifExpr thenStmt elseStmt -> do
         val <- evalExpr ifExpr
@@ -89,56 +108,49 @@ visitStmt stmt = case stmt of
             Just (S.BoolValue True)  -> do visitStmt thenStmt
             Just (S.BoolValue False) -> do visitStmt elseStmt
             _                        -> throw $ S.IncorrectType "if condition" TypeBool $ must val
+
+    Stmts stmts -> mapM_ visitStmt stmts
+
     WhileStmt whileExpr doStmt -> do
         val <- evalExpr whileExpr
         case val of
-            Just (S.BoolValue True)  -> mapM_ visitStmt [doStmt, stmt]
+            Just (S.BoolValue True)  -> do
+                catchError (do
+                    visitStmt doStmt)
+                    (\_ -> throw $ S.InternalError "asdf")
+                visitStmt stmt
             Just (S.BoolValue False) -> return ()
             _                        -> throw $ S.IncorrectType "while condition" TypeBool $ must val
-    ForToStmt id e1 e2 st -> visitForStmt True id e1 e2 st
-    ForDownToStmt id e1 e2 st -> visitForStmt False id e1 e2 st
-    AssignStmt name expr -> do
-        rhs <- evalExpr expr
-        lhs <- S.mustFind name
-        case (lhs, must rhs) of
-            (FuncValue f, FuncValue g) -> S.mustReplace name (FuncValue g)
-            (FuncValue f, rhs')        -> let rName = rvName f in S.mustReplace rName rhs'
-            (_, rhs')                  -> S.mustReplace name (S.NamedValue name rhs')
-    CaseStmt case' cases -> visitStmt $ CaseElseStmt case' cases (Stmts [])
-    CaseElseStmt case' cases elseStmt -> do
-        val <- evalExpr case'
-        case filter (doesMatch $ must val) cases of
-            ((CaseDecl _ thenStmt) : _) -> visitStmt thenStmt
-            []                          -> visitStmt elseStmt
-    FuncCallStmt call -> do
-        visitFuncCall call
-        return ()
-    _ -> throw S.NotImplemented
+
 
 
 -- TODO add break, continue
 visitForStmt :: Bool -> Id -> Expr -> Expr -> Stmt -> S.AppState ()
-visitForStmt isUp name start end doStmt = let
-    (inc, cmp) = if isUp then (1, (<=)) else (-1, (>=))
-    in do
-        startVal <- evalExpr start
-        endVal <- evalExpr end
-        S.mustFind name
-        S.mustReplace name $ S.IntValue $ ((S.getInt . must) startVal) - inc
-        let endVal' = (S.getInt . must) endVal in whileM_ (do
-                startVal' <- S.find name
-                S.setConst False name
-                let newVal = inc + (S.getInt . must) startVal' in do
-                    S.mustReplace name $ S.IntValue newVal
-                    S.setConst True name
-                    return $ cmp newVal endVal'
-            ) (visitStmt doStmt)
-        -- for loop variables cannot be const, so it's safe to unset the const-ness
-        S.setConst False name
+visitForStmt isUp name start end doStmt = do
+    startVal <- evalExpr start
+    endVal <- evalExpr end
+    _ <- S.mustFind name
+    let startVal' = (S.getInt . must) startVal
+        endVal' = (S.getInt . must) endVal
+        in catchError (do
+            mapM_ (\newval -> do
+                S.mustReplace name $ S.NamedValue name $ S.IntValue newval
+                catchError (do visitStmt doStmt) (\evt -> case evt of
+                    S.Continue -> return ()
+                    S.Break    -> throwError evt
+                    )
+                ) $ if isUp then [startVal' .. endVal'] else reverse [endVal' .. startVal']
+
+            S.mustReplace name $ S.NamedValue name $ S.IntValue endVal'
+            ) (\evt -> case evt of
+                S.Break -> return ()
+                _       -> throw $ S.InternalError "unknown error thrown"
+            )
+    S.setConst False name
 
 evalExpr :: Expr -> S.AppState (Maybe S.Value)
-evalExpr expr = do
-    case expr of
+evalExpr e = do
+    case e of
         VarExpr name        -> S.find name
         IntExpr i           -> return $ Just $ S.IntValue i
         BoolExpr b          -> return $ Just $ S.BoolValue b
@@ -153,8 +165,8 @@ evalExpr expr = do
         _                   -> throw S.NotImplemented
 
 visitFuncCall :: FuncCall -> S.AppState (Maybe S.Value)
-visitFuncCall (FuncCall fname exprs) = do
-    defn <- S.find fname
+visitFuncCall (FuncCall name exprs) = do
+    defn <- S.find name
     args <- mapM evalExpr exprs
     case must defn of
         S.NativeFuncValue (NativeFunc fn) -> fn $ map must args
@@ -162,9 +174,8 @@ visitFuncCall (FuncCall fname exprs) = do
             returnName = rvName func
             args' = map must args
             in do
-                st <- get
                 S.pushEmpty
-                mapM_ (\(a, p) -> S.overwrite (name p) a) $ zip args' (params func)
+                mapM_ (\(a, p) -> S.overwrite (dname p) a) $ zip args' (params func)
                 if (returnType func) /= TypeNone
                     then S.overwrite returnName (valueOf $ returnType func)
                     else return ()
@@ -172,6 +183,7 @@ visitFuncCall (FuncCall fname exprs) = do
                 rv <- S.find returnName
                 S.pop
                 return rv
+        _ -> throw S.NotImplemented
 
 combine :: String -> S.Value -> S.Value -> S.AppState (S.Value)
 combine op (S.NamedValue _ v1') v2 = combine op v1' v2
@@ -192,12 +204,14 @@ combine op v1 v2 = case (v1, v2) of
     (S.StrValue s1, S.StrValue s2) -> return (
         case op of
             "+" -> S.StrValue $ s1 ++ s2
+            _   -> throw $ S.InternalError "unknown operation on strings"
         )
     (S.BoolValue b1, S.BoolValue b2) -> return $ S.BoolValue (
         case op of
             "and" -> b1 && b2
             "or"  -> b1 || b2
             "xor" -> xor b1 b2
+            _     -> throw $ S.InternalError "unknown operation on bools"
         )
     _ -> do
         t1' <- marshal (v1, v2)
@@ -246,19 +260,19 @@ rvName f = (Id $ ".retval" ++ (toString . fname $ f))
 
 cast :: PascalType -> S.Value -> Maybe S.Value
 cast type' val = case (val, type') of
-    (S.NamedValue _ val', _)       -> cast type' val'
-    (S.BoolValue val', TypeBool)   -> Just val
-    (S.IntValue val', TypeInt)     -> Just val
-    (S.IntValue val', TypeFloat)   -> Just $ S.FloatValue $ fromIntegral val'
-    (S.FloatValue val', TypeFloat) -> Just val
-    (S.StrValue val', TypeString)  -> Just val
-    (S.FuncValue val', TypeFunc)   -> Just val
-    (_, _)                         -> Nothing
+    (S.NamedValue _ val', _)     -> cast type' val'
+    (S.BoolValue _, TypeBool)    -> Just val
+    (S.IntValue _, TypeInt)      -> Just val
+    (S.IntValue val', TypeFloat) -> Just $ S.FloatValue $ fromIntegral val'
+    (S.FloatValue _, TypeFloat)  -> Just val
+    (S.StrValue _, TypeString)   -> Just val
+    (S.FuncValue _, TypeFunc)    -> Just val
+    (_, _)                       -> Nothing
 
 must :: Maybe a -> a
 must mv = case mv of
     Just v -> v
-    _      -> throw S.CannotEval
+    _      -> throw $ S.InternalError "Undefined Symbol"
 
 -- partially inspired by https://stackoverflow.com/q/40297001/8887313
 splitAtSpace :: [Char] -> ([Char], [Char])

@@ -1,10 +1,11 @@
 module Pascal.State where
 
 import           Control.Exception
-import           Control.Monad.State
 import           Control.Monad.Except
+import           Control.Monad.State
+import           Data.Char            (toLower)
 import           Pascal.Data
-import qualified Pascal.Scope        as Scope
+import qualified Pascal.Scope         as Scope
 
 data InterpreterError = UnknownSymbol Id
     | CannotCombine
@@ -41,7 +42,17 @@ data Value = IntValue
     | NativeFuncValue
     { getNativeFunc :: NativeFunc
     }
-    deriving (Show, Eq)
+    deriving (Eq)
+
+instance Show Value where
+    show (IntValue i)        = show i
+    show (StrValue s)        = s
+    show (FloatValue f)      = show f
+    show (BoolValue b)       = map toLower $ show b
+    show (NamedValue _ v)    = show v
+    show (FuncValue _)       = "<function>"
+    show (NativeFuncValue _) = "<native-function>"
+
 
 data NativeFunc = NativeFunc ([Value] -> AppState (Maybe Value))
 

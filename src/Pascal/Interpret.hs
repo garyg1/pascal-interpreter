@@ -18,7 +18,8 @@ declareNativeFunctions = do
     S.overwrite (Id "exp") $ nativeFuncFrom exp
     S.overwrite (Id "ln") $ nativeFuncFrom log
     S.overwrite (Id "writeln") $ NativeFuncValue $ NativeFunc (\args -> liftIO $ do
-        mapM_ (\arg -> print arg) args
+        mapM_ (\arg -> putStr $ show arg) args
+        putStrLn ""
         return Nothing
         )
     S.overwrite (Id "readln") $ NativeFuncValue $ NativeFunc (\args -> do
@@ -104,24 +105,31 @@ visitStmt stmt = case stmt of
     IfStmt ifExpr thenStmt -> visitStmt $ IfElseStmt ifExpr thenStmt (Stmts [])
     IfElseStmt ifExpr thenStmt elseStmt -> do
         val <- evalExpr ifExpr
-        case val of
+        case cast TypeBool $ must val of
             Just (S.BoolValue True)  -> do visitStmt thenStmt
             Just (S.BoolValue False) -> do visitStmt elseStmt
             _                        -> throw $ S.IncorrectType "if condition" TypeBool $ must val
 
     Stmts stmts -> mapM_ visitStmt stmts
 
-    WhileStmt whileExpr doStmt -> do
-        val <- evalExpr whileExpr
-        case val of
-            Just (S.BoolValue True)  -> do
-                catchError (do
-                    visitStmt doStmt)
-                    (\_ -> throw $ S.InternalError "asdf")
-                visitStmt stmt
-            Just (S.BoolValue False) -> return ()
-            _                        -> throw $ S.IncorrectType "while condition" TypeBool $ must val
+    WhileStmt _ _ -> catchError (do visitWhileStmt stmt) (\evt -> case evt of
+            S.Break    -> return ()
+            S.Continue -> throw $ S.InternalError "unknown error 'continue' thrown"
+        )
 
+visitWhileStmt :: Stmt -> S.AppState ()
+visitWhileStmt whileStmt = do
+    val <- evalExpr whileExpr
+    case cast TypeBool $ must val of
+        Just (S.BoolValue True) -> do
+            catchError (do visitStmt doStmt) (\evt -> case evt of
+                S.Continue -> return ()
+                S.Break    -> throwError evt
+                )
+            visitWhileStmt whileStmt
+        Just (S.BoolValue False) -> return ()
+        _                        -> throw $ S.IncorrectType "while condition" TypeBool $ must val
+    where (WhileStmt whileExpr doStmt) = whileStmt
 
 
 -- TODO add break, continue
@@ -204,14 +212,14 @@ combine op v1 v2 = case (v1, v2) of
     (S.StrValue s1, S.StrValue s2) -> return (
         case op of
             "+" -> S.StrValue $ s1 ++ s2
-            _   -> throw $ S.InternalError "unknown operation on strings"
+            _   -> S.BoolValue $ combineToBool op s1 s2
         )
     (S.BoolValue b1, S.BoolValue b2) -> return $ S.BoolValue (
         case op of
             "and" -> b1 && b2
             "or"  -> b1 || b2
             "xor" -> xor b1 b2
-            _     -> throw $ S.InternalError "unknown operation on bools"
+            _     -> combineToBool op b1 b2
         )
     _ -> do
         t1' <- marshal (v1, v2)

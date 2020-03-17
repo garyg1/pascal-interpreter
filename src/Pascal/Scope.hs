@@ -27,11 +27,11 @@ empty :: Scope a
 empty = Scope Map.empty Set.empty
 
 insert :: Id -> a -> Scope a -> Scope a
-insert name val (Scope vs cs) = case Set.member name cs of
-    False -> Scope (Map.insert name val vs) cs
+insert name val (Scope vs consts) = case Set.member name consts of
+    False -> Scope (Map.insert name val vs) consts
     True  -> throw $ CannotAssignToConst name
 
 setConst :: Bool -> Id -> Scope a -> Scope a
-setConst isConst name (Scope vs cs) = case isConst of
-    True  -> Scope vs (Set.insert name cs)
-    False -> Scope vs (Set.delete name cs)
+setConst isConst name (Scope vs consts) = case isConst of
+    True  -> Scope vs (Set.insert name consts)
+    False -> Scope vs (Set.delete name consts)

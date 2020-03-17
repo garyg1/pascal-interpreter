@@ -10,7 +10,7 @@ var c : double = 1;
     e : boolean = true;
 
 const f : double = 1;
-    g : boolean = false;
+    g : integer = 1;
     h = true;
 
 begin

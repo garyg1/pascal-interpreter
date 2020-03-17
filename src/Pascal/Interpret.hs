@@ -65,12 +65,15 @@ visitDecl decl = do
     return ()
 
 visitVarDecl :: Bool -> VarDecl -> S.AppState ()
-visitVarDecl isConst decl = do
-    case decl of
-        Decl name type' -> S.declare isConst name $ S.NamedValue name $ S.valueOf type'
-        _ -> do
-            val <- mustEvalExpr $ expr decl
-            S.declare isConst (dname decl) $ S.NamedValue (dname decl) val
+visitVarDecl isConst decl = let name = dname decl in do
+    val <- (case decl of
+        Decl _ type' -> return $ S.valueOf type'
+        DeclTypeDefn _ type' expr' -> do
+            val' <- mustEvalExpr expr'
+            return $ mustCast type' val'
+        DeclDefn _ expr' -> mustEvalExpr expr'
+        )
+    S.declare isConst name $ S.NamedValue name val
 
 visitFuncDecl :: FuncOrProc -> S.AppState ()
 visitFuncDecl func = S.declare False (fname func) (S.FuncValue func)
@@ -82,8 +85,8 @@ visitStmt stmt = case stmt of
         lhs <- S.mustFind name
         case (lhs, rhs) of
             (FuncValue _, FuncValue g) -> S.mustReplace name (FuncValue g)
-            (FuncValue f, rhs')        -> let rName = rvName f in S.mustReplace rName rhs'
-            (_, rhs')                  -> S.mustReplace name (S.NamedValue name rhs')
+            (FuncValue f, rhs')        -> S.mustReplace (rvName f) $ mustCast (returnType f) rhs'
+            (_, rhs')                  -> S.mustReplace name $ S.NamedValue name $ mustCast (S.typeOf lhs) rhs'
 
     BreakStmt -> throwError S.Break
     ContinueStmt -> throwError S.Continue
@@ -205,6 +208,7 @@ combine op v1 v2 = case (v1, v2) of
     (S.IntValue i1, S.IntValue i2) -> return (
         case op of
             "/" -> S.IntValue $ div i1 i2
+            "mod" -> S.IntValue $ mod i1 i2
             _   | op `elem` ["+", "*", "-"] -> S.IntValue $ combineToNum op i1 i2
                 | otherwise                 -> S.BoolValue $ combineToBool op i1 i2
         )

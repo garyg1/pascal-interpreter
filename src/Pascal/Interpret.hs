@@ -187,18 +187,16 @@ visitFuncCall (FuncCall name exprs) = do
     args <- mapM mustEvalExpr exprs
     case defn of
         S.NativeFuncValue (NativeFunc fn) -> fn args
-        S.FuncValue func -> let
-            returnName = rvName func
-            in do
-                S.pushEmpty
-                mapM_ (\(a, p) -> S.overwrite (dname p) a) $ zip args (params func)
-                if (returnType func) /= TypeNone
-                    then S.overwrite returnName (valueOf $ returnType func)
-                    else return ()
-                visitBlock (block func)
-                rv <- S.find returnName
-                S.pop
-                return rv
+        S.FuncValue func -> let returnName = (rvName func) in do
+            S.pushEmpty
+            mapM_ (\(a, p) -> S.overwrite (dname p) a) $ zip args (params func)
+            if (returnType func) /= TypeNone
+                then S.overwrite returnName (valueOf $ returnType func)
+                else return ()
+            visitBlock (block func)
+            rv <- S.find returnName
+            S.pop
+            return rv
         _ -> throw S.NotImplemented
 
 combine :: String -> S.Value -> S.Value -> S.AppState (S.Value)

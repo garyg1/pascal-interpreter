@@ -1,2 +1,0 @@
--- Look at how testing is set up in FORTH project and emulate here
--- Make sure you unit test every function you write

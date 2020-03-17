@@ -11,7 +11,11 @@ import           System.IO
 
 interpret :: Program -> S.AppState ()
 interpret (Program _ block) = do
-    -- declare native functions
+    declareNativeFunctions
+    visitBlock block
+
+declareNativeFunctions :: S.AppState ()
+declareNativeFunctions = do
     S.overwrite (Id "sqrt") $ nativeFuncFrom sqrt
     S.overwrite (Id "sin") $ nativeFuncFrom sin
     S.overwrite (Id "cos") $ nativeFuncFrom cos
@@ -42,7 +46,6 @@ interpret (Program _ block) = do
             ) ("", True) args
         return Nothing
         )
-    visitBlock block
 
 nativeFuncFrom :: (Float -> Float) -> S.Value
 nativeFuncFrom fn = S.NativeFuncValue $ S.NativeFunc $ \(arg : rest) ->

@@ -26,6 +26,7 @@ executable Pascal
                      , Pascal.Base
                      , Pascal.Wrapper
                      , Pascal.State
+                     , Pascal.Scope
   -- other-extensions:    
   build-depends:       base >= 4.7
                       , bytestring
@@ -33,6 +34,7 @@ executable Pascal
                       , hspec
                       , containers
                       , mtl
+                      , monad-loops
 
   hs-source-dirs:      src
   build-tools:         happy, alex

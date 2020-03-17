@@ -18,7 +18,31 @@ begin
     a := fact(n);
 end;
 
-var a: integer;
+var a: integer = 10;
+    x, y : integer;
+    result: string;
+    b : boolean;
+    f : double;
+
+const c = 1;
 begin
-    temp(5);
+    while fact(a) > 500 do begin
+        a := a - 1;
+    end;
+    case a of
+        1..3, 5: result := 'a was in 1..3 or 5';
+        else result := '';
+    end;
+
+    for a := 1 to 10 do begin
+        if a = 5 then break;
+        writeln(a);
+    end;
+    writeln(a);
+    for a := 10 downto 1 do 
+    begin
+        writeln(a);
+    end;
+
+    writeln(ln(1), exp(1), cos(1), sin(1), sqrt(1));
 end.

@@ -188,8 +188,8 @@ ForToStmt :: {Stmt}
     | 'for' ID ':=' Expr 'downto' Expr 'do' Stmt        { ForDownToStmt (Id $2) $4 $6 $8 }
 
 KeywordStmt :: {Stmt}
-    : 'continue'        { Continue }
-    | 'break'           { Break }
+    : 'continue'        { ContinueStmt }
+    | 'break'           { BreakStmt }
 
 AssignStmt :: {Stmt}
     : ID ':=' Expr      { AssignStmt (Id $1) $3 }

@@ -15,40 +15,40 @@ data Decl = VarDecls [VarDecl]
     deriving (Show, Eq)
 
 data VarDecl = Decl
-    { name    :: Id
+    { dname   :: Id
     , varType :: PascalType
     }
     | DeclTypeDefn
-    { name    :: Id
+    { dname   :: Id
     , varType :: PascalType
     , expr    :: Expr
     }
     | DeclDefn
-    { name :: Id
-    , expr :: Expr
+    { dname :: Id
+    , expr  :: Expr
     }
     deriving (Show, Eq)
 
 data FuncOrProc = Func
-    { fname       :: Id
-    , params      :: [VarDecl]
+    { fname      :: Id
+    , params     :: [VarDecl]
     , returnType :: PascalType
     , block      :: Block
     }
     deriving (Show, Eq)
 
-data Stmt = Stmts [Stmt]
-    | IfStmt Expr Stmt
-    | IfElseStmt Expr Stmt Stmt
-    | CaseStmt Expr [CaseDecl]
+data Stmt = AssignStmt Id Expr
+    | BreakStmt
     | CaseElseStmt Expr [CaseDecl] Stmt
-    | WhileStmt Expr Stmt
-    | ForToStmt Id Expr Expr Stmt
+    | CaseStmt Expr [CaseDecl]
+    | ContinueStmt
     | ForDownToStmt Id Expr Expr Stmt
-    | Continue
-    | Break
-    | AssignStmt Id Expr
+    | ForToStmt Id Expr Expr Stmt
     | FuncCallStmt FuncCall
+    | IfElseStmt Expr Stmt Stmt
+    | IfStmt Expr Stmt
+    | Stmts [Stmt]
+    | WhileStmt Expr Stmt
     deriving (Show, Eq)
 
 data CaseDecl = CaseDecl [IntRange] Stmt
@@ -74,7 +74,7 @@ newtype Id
     deriving (Eq, Ord)
 
 instance Show Id where
-    show id = "'Id: " ++ (toString id) ++ "'"
+    show _id = "'Id: " ++ (toString _id) ++ "'"
 
 data FuncCall = FuncCall Id [Expr]
     deriving (Show, Eq)
@@ -84,5 +84,6 @@ data PascalType = TypeBool
     | TypeFloat
     | TypeString
     | TypeFunc
-    | TypeNone -- unused: for procedure return types only
+    | TypeNativeFunc
+    | TypeNone
     deriving (Show, Eq)

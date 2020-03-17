@@ -12,11 +12,11 @@ interpret (Program _ bl) = do
 
 declareNativeFunctions :: S.AppState ()
 declareNativeFunctions = do
-    S.overwrite (Id "sqrt") $ nativeFuncFrom sqrt
-    S.overwrite (Id "sin") $ nativeFuncFrom sin
-    S.overwrite (Id "cos") $ nativeFuncFrom cos
-    S.overwrite (Id "exp") $ nativeFuncFrom exp
-    S.overwrite (Id "ln") $ nativeFuncFrom log
+    S.overwrite (Id "sqrt") $ nativeFuncFrom (Id "sqrt") sqrt
+    S.overwrite (Id "sin") $ nativeFuncFrom (Id "sin") sin
+    S.overwrite (Id "cos") $ nativeFuncFrom (Id "cos") cos
+    S.overwrite (Id "exp") $ nativeFuncFrom (Id "exp") exp
+    S.overwrite (Id "ln") $ nativeFuncFrom (Id "ln") log
     S.overwrite (Id "writeln") $ NativeFuncValue $ NativeFunc (\args -> liftIO $ do
         mapM_ (\arg -> putStr $ show arg) args
         putStrLn ""
@@ -43,11 +43,11 @@ declareNativeFunctions = do
         return Nothing
         )
 
-nativeFuncFrom :: (Float -> Float) -> S.Value
-nativeFuncFrom fn = S.NativeFuncValue $ S.NativeFunc $ \(arg : rest) ->
+nativeFuncFrom :: Id -> (Float -> Float) -> S.Value
+nativeFuncFrom name fn = S.NativeFuncValue $ S.NativeFunc $ \(arg : rest) ->
     if length rest /= 0
-        then throw $ S.IncorrectArgs (Id "sqrt") (arg : rest) [Decl (Id "operand") TypeInt]
-        else let (S.FloatValue f) = must $ cast TypeFloat arg
+        then throw $ S.IncorrectArgs name (arg : rest) [Decl (Id "operand") TypeInt]
+        else let (S.FloatValue f) = mustCast TypeFloat arg
             in return $ Just $ S.FloatValue $ fn f
 
 visitBlock :: Block -> S.AppState ()
@@ -112,7 +112,7 @@ visitStmt stmt = case stmt of
 
     Stmts stmts -> mapM_ visitStmt stmts
 
-    WhileStmt _ _ -> catchError (do visitWhileStmt stmt) (\evt -> case evt of
+    WhileStmt _ _ -> catchError (visitWhileStmt stmt) (\evt -> case evt of
             S.Break    -> return ()
             S.Continue -> throw $ S.InternalError "unknown error 'continue' thrown"
         )
@@ -122,7 +122,7 @@ visitWhileStmt whileStmt = do
     val <- evalExpr whileExpr
     case cast TypeBool $ must val of
         Just (S.BoolValue True) -> do
-            catchError (do visitStmt doStmt) (\evt -> case evt of
+            catchError (visitStmt doStmt) (\evt -> case evt of
                 S.Continue -> return ()
                 S.Break    -> throwError evt
                 )
@@ -132,7 +132,6 @@ visitWhileStmt whileStmt = do
     where (WhileStmt whileExpr doStmt) = whileStmt
 
 
--- TODO add break, continue
 visitForStmt :: Bool -> Id -> Expr -> Expr -> Stmt -> S.AppState ()
 visitForStmt isUp name start end doStmt = do
     startVal <- evalExpr start
@@ -143,7 +142,7 @@ visitForStmt isUp name start end doStmt = do
         in catchError (do
             mapM_ (\newval -> do
                 S.mustReplace name $ S.NamedValue name $ S.IntValue newval
-                catchError (do visitStmt doStmt) (\evt -> case evt of
+                catchError (visitStmt doStmt) (\evt -> case evt of
                     S.Continue -> return ()
                     S.Break    -> throwError evt
                     )
@@ -154,7 +153,7 @@ visitForStmt isUp name start end doStmt = do
                 S.Break -> return ()
                 _       -> throw $ S.InternalError "unknown error thrown"
             )
-    S.setConst False name
+    S.setConst False name -- `name` couldn't have been const before this
 
 evalExpr :: Expr -> S.AppState (Maybe S.Value)
 evalExpr e = do
@@ -280,7 +279,12 @@ cast type' val = case (val, type') of
 must :: Maybe a -> a
 must mv = case mv of
     Just v -> v
-    _      -> throw $ S.InternalError "Undefined Symbol"
+    _      -> throw S.CannotEval
+
+mustCast :: PascalType -> S.Value -> S.Value
+mustCast t v = case cast t v of
+    Just v' -> v'
+    Nothing -> throw $ S.CannotCast t v
 
 -- partially inspired by https://stackoverflow.com/q/40297001/8887313
 splitAtSpace :: [Char] -> ([Char], [Char])

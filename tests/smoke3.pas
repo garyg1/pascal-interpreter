@@ -47,5 +47,11 @@ begin
         writeln(a);
     end;
 
-    writeln(ln(1), exp(1), cos(1), sin(1), sqrt(1));
+    writeln(
+        ln(1),
+        '|', exp(1),
+        '|', cos(1),
+        '|', sin(1),
+        '|', sqrt(1)
+    );
 end.

@@ -8,8 +8,6 @@ import           Pascal.Data
 import qualified Pascal.Scope         as Scope
 
 data InterpreterError = UnknownSymbol Id
-    | CannotCombine
-    | CannotEval
     | IncorrectType
     { location :: String
     , expected :: PascalType
@@ -20,6 +18,9 @@ data InterpreterError = UnknownSymbol Id
     | DuplicateDeclaration Id
     | VariableExpected String
     | InternalError String
+    | CannotCast PascalType Value
+    | CannotCombine
+    | CannotEval
     | CannotRead PascalType
     deriving (Show)
 instance Exception InterpreterError

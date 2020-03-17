@@ -122,9 +122,6 @@ visitStmt stmt = case stmt of
             Just (S.BoolValue False) -> return ()
             _                        -> throw $ S.IncorrectType "while condition" TypeBool $ must val
 
-
-
--- TODO add break, continue
 visitForStmt :: Bool -> Id -> Expr -> Expr -> Stmt -> S.AppState ()
 visitForStmt isUp name start end doStmt = do
     startVal <- evalExpr start

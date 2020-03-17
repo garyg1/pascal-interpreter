@@ -19,8 +19,8 @@ data InterpreterError = UnknownSymbol Id
     | VariableExpected String
     | InternalError String
     | CannotCast PascalType Value
-    | CannotCombine
-    | CannotEval
+    | CannotCombine String String
+    | CannotEval Expr
     | CannotRead PascalType
     deriving (Show)
 instance Exception InterpreterError

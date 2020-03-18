@@ -22,12 +22,12 @@ data InterpreterError = UnknownSymbol Id
     | CannotCombine String String
     | CannotEval Expr
     | CannotRead PascalType
-    deriving (Show)
+    deriving (Show, Eq)
 instance Exception InterpreterError
 
 data Events = Continue
     | Break
-    deriving (Show)
+    deriving (Show, Eq)
 instance Exception Events
 
 data Value = IntValue
@@ -36,9 +36,12 @@ data Value = IntValue
     | StrValue String
     | FloatValue Float
     | BoolValue Bool
-    | NamedValue Id Value
+    | NamedValue
+    { getName  :: Id
+    , getValue :: Value
+    }
     | FuncValue
-    { getFunc :: FuncOrProc
+    { getFunc :: Func
     }
     | NativeFuncValue
     { getNativeFunc :: NativeFunc
@@ -55,14 +58,16 @@ instance Show Value where
     show (NativeFuncValue _) = "<native-function>"
 
 
-data NativeFunc = NativeFunc ([Value] -> AppState (Maybe Value))
+data NativeFunc = NativeFunc
+    { nfName :: Id
+    , nfFunc :: ([Value] -> AppState (Maybe Value))
+    }
 
 instance Show NativeFunc where
     show _ = "<Native Function>"
 
 instance Eq NativeFunc where
-    _ == _ = False
-
+    (NativeFunc n1 _) == (NativeFunc n2 _) = n1 == n2
 
 valueOf :: PascalType -> Value
 valueOf TypeBool   = BoolValue False
@@ -80,17 +85,20 @@ typeOf (NamedValue _ val)  = typeOf val
 typeOf (FuncValue _)       = TypeFunc
 typeOf (NativeFuncValue _) = TypeNativeFunc
 
-
 data PState = PState
     { stack  :: [Scope.Scope Value]
     , global :: Scope.Scope Value
     }
     deriving (Show, Eq)
 
-type AppState = ExceptT Events (StateT PState IO)
+type AppState = StateT PState (ExceptT Events IO)
+type AppReturn a = Either Events (a, PState)
 
-runApp :: AppState a0 -> IO (Either Events a0, PState)
-runApp f = runStateT (runExceptT f) new
+runApp :: AppState a -> IO (AppReturn a)
+runApp f = runExceptT (runStateT f new)
+
+new :: PState
+new = PState [] Scope.empty
 
 declare :: Bool -> Id -> Value -> AppState ()
 declare isConst name value = do
@@ -160,5 +168,3 @@ replace' name val state' = case state' of
         Just _  -> let gl' = Scope.insert name val gl in Just $ PState [] gl'
         Nothing -> Nothing
 
-new :: PState
-new = PState [] Scope.empty

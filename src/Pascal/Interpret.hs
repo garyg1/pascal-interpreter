@@ -10,62 +10,20 @@ interpret (Program _ bl) = do
     declareNativeFunctions
     visitBlock bl
 
-declareNativeFunctions :: S.AppState ()
-declareNativeFunctions = do
-    S.overwrite (Id "sqrt") $ nativeFuncFrom (Id "sqrt") sqrt
-    S.overwrite (Id "sin") $ nativeFuncFrom (Id "sin") sin
-    S.overwrite (Id "cos") $ nativeFuncFrom (Id "cos") cos
-    S.overwrite (Id "exp") $ nativeFuncFrom (Id "exp") exp
-    S.overwrite (Id "ln") $ nativeFuncFrom (Id "ln") log
-    S.overwrite (Id "writeln") $ NativeFuncValue $ NativeFunc (\args -> liftIO $ do
-        mapM_ (\arg -> putStr $ show arg) args
-        putStrLn ""
-        return Nothing
-        )
-    S.overwrite (Id "readln") $ NativeFuncValue $ NativeFunc (\args -> do
-        if not $ all isvar args
-            then throw $ S.VariableExpected "readln"
-            else return ()
-        foldM_ (\(line, shouldFlush) (S.NamedValue name val) -> do
-            line' <- if shouldFlush then liftIO getLine else return line
-            case S.typeOf val of
-                TypeString -> do
-                    S.overwrite name $ S.NamedValue name $ S.StrValue line'
-                    return ("", True)
-                type' -> do
-                    S.overwrite name $ S.NamedValue name $ case type' of
-                        TypeInt   -> S.IntValue $ read word
-                        TypeFloat -> S.FloatValue $ read word
-                        otherType -> throw $ CannotRead otherType
-                    return (rest, False)
-                    where (word, rest) = splitAtSpace line'
-            ) ("", True) args
-        return Nothing
-        )
-
-nativeFuncFrom :: Id -> (Float -> Float) -> S.Value
-nativeFuncFrom name fn = S.NativeFuncValue $ S.NativeFunc $ \(arg : rest) ->
-    if length rest /= 0
-        then throw $ S.IncorrectArgs name (arg : rest) [Decl (Id "operand") TypeInt]
-        else let (S.FloatValue f) = mustCast TypeFloat arg
-            in return $ Just $ S.FloatValue $ fn f
-
 visitBlock :: Block -> S.AppState ()
 visitBlock (Block decls stmts) = do
     mapM_ visitDecl decls
     mapM_ visitStmt stmts
-    return ()
 
 visitDecl :: Decl -> S.AppState ()
-visitDecl decl = do
-    case decl of
-        VarDecls vds   -> mapM_ (visitVarDecl False) vds
-        ConstDecls cds -> mapM_ (visitVarDecl True) cds
-        FuncDecl func  -> visitFuncDecl func
-    return ()
+visitDecl decl = case decl of
+    VarDecls vds   -> mapM_ (visitVarDecl False) vds
+    ConstDecls cds -> mapM_ (visitVarDecl True) cds
+    FuncDecl func  -> visitFuncDecl func
 
 visitVarDecl :: Bool -> VarDecl -> S.AppState ()
-visitVarDecl isConst decl = let name = dname decl in do
+visitVarDecl isConst decl = do
+    let name = dname decl
     val <- (case decl of
         Decl _ type' -> return $ S.valueOf type'
         DeclTypeDefn _ type' expr' -> do
@@ -75,7 +33,7 @@ visitVarDecl isConst decl = let name = dname decl in do
         )
     S.declare isConst name $ S.NamedValue name val
 
-visitFuncDecl :: FuncOrProc -> S.AppState ()
+visitFuncDecl :: Func -> S.AppState ()
 visitFuncDecl func = S.declare False (fname func) (S.FuncValue func)
 
 visitStmt :: Stmt -> S.AppState ()
@@ -122,6 +80,7 @@ visitStmt stmt = case stmt of
 
 visitWhileStmt :: Stmt -> S.AppState ()
 visitWhileStmt whileStmt = do
+    let WhileStmt whileExpr doStmt = whileStmt
     val <- mustEvalExpr whileExpr
     case cast TypeBool val of
         Just (S.BoolValue True) -> do
@@ -132,30 +91,34 @@ visitWhileStmt whileStmt = do
             visitWhileStmt whileStmt
         Just (S.BoolValue False) -> return ()
         _                        -> throw $ S.IncorrectType "while condition" TypeBool val
-    where (WhileStmt whileExpr doStmt) = whileStmt
-
 
 visitForStmt :: Bool -> Id -> Expr -> Expr -> Stmt -> S.AppState ()
 visitForStmt isUp name start end doStmt = do
     startVal <- mustEvalExpr start
     endVal <- mustEvalExpr end
-    _ <- S.mustFind name
     let startVal' = S.getInt startVal
         endVal' = S.getInt endVal
-        in catchError (do
-            mapM_ (\newval -> do
-                S.mustReplace name $ S.NamedValue name $ S.IntValue newval
-                catchError (visitStmt doStmt) (\evt -> case evt of
-                    S.Continue -> return ()
-                    S.Break    -> throwError evt
-                    )
-                ) $ if isUp then [startVal' .. endVal'] else reverse [endVal' .. startVal']
 
-            S.mustReplace name $ S.NamedValue name $ S.IntValue endVal'
-            ) (\evt -> case evt of
-                S.Break -> return ()
-                _       -> throw $ S.InternalError "unknown error thrown"
-            )
+    -- assert
+    _ <- S.mustFind name
+
+    catchError (do
+        mapM_ (\newval -> do
+            S.mustReplace name $ S.NamedValue name $ S.IntValue newval
+            catchError (visitStmt doStmt) (\evt -> case evt of
+                S.Continue -> return ()
+                S.Break    -> throwError evt
+                )
+            ) $ if isUp
+                then [startVal' .. endVal']
+                else reverse [endVal' .. startVal']
+
+        S.mustReplace name $ S.NamedValue name $ S.IntValue endVal'
+        ) (\evt -> case evt of
+            S.Break -> return ()
+            _       -> throw $ S.InternalError "unknown error thrown"
+        )
+
     S.setConst False name -- `name` couldn't have been const before this
 
 mustEvalExpr :: Expr -> S.AppState (S.Value)
@@ -186,8 +149,9 @@ visitFuncCall (FuncCall name exprs) = do
     defn <- S.mustFind name
     args <- mapM mustEvalExpr exprs
     case defn of
-        S.NativeFuncValue (NativeFunc fn) -> fn args
-        S.FuncValue func -> let returnName = (rvName func) in do
+        S.NativeFuncValue (NativeFunc _ fn) -> fn args
+        S.FuncValue func -> do
+            let returnName = rvName func
             S.pushEmpty
             mapM_ (\(a, p) -> S.overwrite (dname p) a) $ zip args (params func)
             if (returnType func) /= TypeNone
@@ -198,6 +162,50 @@ visitFuncCall (FuncCall name exprs) = do
             S.pop
             return rv
         _ -> throw S.NotImplemented
+
+declareNativeFunctions :: S.AppState ()
+declareNativeFunctions = do
+    S.overwrite (Id "sqrt") $ nativeFuncFrom (Id "sqrt") sqrt
+    S.overwrite (Id "sin") $ nativeFuncFrom (Id "sin") sin
+    S.overwrite (Id "cos") $ nativeFuncFrom (Id "cos") cos
+    S.overwrite (Id "exp") $ nativeFuncFrom (Id "exp") exp
+    S.overwrite (Id "ln") $ nativeFuncFrom (Id "ln") log
+    S.overwrite (Id "writeln") $ NativeFuncValue $ NativeFunc (Id "writeln") writeln
+    S.overwrite (Id "readln") $ NativeFuncValue $ NativeFunc (Id "readln") readln
+
+readln :: [S.Value] -> S.AppState (Maybe S.Value)
+readln args = do
+    if not $ all isvar args
+        then throw $ S.VariableExpected "readln"
+        else return ()
+    foldM_ (\(line, shouldFlush) (S.NamedValue name val) -> do
+        line' <- if shouldFlush then liftIO getLine else return line
+        case S.typeOf val of
+            TypeString -> do
+                S.overwrite name $ S.NamedValue name $ S.StrValue line'
+                return ("", True)
+            type' -> do
+                let (word, rest) = splitAtSpace line'
+                S.overwrite name $ S.NamedValue name $ case type' of
+                    TypeInt   -> S.IntValue $ read word
+                    TypeFloat -> S.FloatValue $ read word
+                    otherType -> throw $ CannotRead otherType
+                return (rest, False)
+        ) ("", True) args
+    return Nothing
+
+writeln :: [S.Value] -> S.AppState (Maybe S.Value)
+writeln args = liftIO $ do
+    mapM_ (putStr . show) args
+    putStrLn ""
+    return Nothing
+
+nativeFuncFrom :: Id -> (Float -> Float) -> S.Value
+nativeFuncFrom name fn = S.NativeFuncValue $ S.NativeFunc name $ \(arg : rest) ->
+    if length rest /= 0
+        then throw $ S.IncorrectArgs name (arg : rest) [Decl (Id "operand") TypeInt]
+        else let (S.FloatValue f) = mustCast TypeFloat arg
+            in return $ Just $ S.FloatValue $ fn f
 
 combine :: String -> S.Value -> S.Value -> S.AppState (S.Value)
 combine op (S.NamedValue _ v1') v2 = combine op v1' v2
@@ -248,7 +256,7 @@ combineToBool op n1 n2 = case op of
     ">"  -> n1 > n2
     "<"  -> n1 < n2
     "<=" -> n1 <= n2
-    ">=" -> n1 <= n2
+    ">=" -> n1 >= n2
     _    -> throw $ S.CannotCombine (show n1) (show n2)
 
 marshal :: (S.Value, S.Value) -> S.AppState (Maybe (S.Value, S.Value))
@@ -265,13 +273,13 @@ marshal (v1, v2) = case (v1, v2) of
 
     (_, _) -> return Nothing
 
--- improves on https://annevankesteren.nl/2007/02/haskell-xor
+-- https://annevankesteren.nl/2007/02/haskell-xor
 xor :: Bool -> Bool -> Bool
-xor True a = not a
-xor _ a    = a
+xor True a  = not a
+xor False a = a
 
-rvName :: FuncOrProc -> Id
-rvName f = (Id $ ".retval" ++ (toString . fname $ f))
+rvName :: Func -> Id
+rvName f = (Id $ ".retval$" ++ (toString . fname $ f))
 
 cast :: PascalType -> S.Value -> Maybe S.Value
 cast type' val = case (val, type') of
@@ -302,9 +310,6 @@ isvar (S.NamedValue _ _) = True
 isvar _                  = False
 
 doesMatch :: S.Value -> CaseDecl -> Bool
-doesMatch val range = let
-    (CaseDecl ranges _) = range
-    in case val of
-        S.NamedValue _ v -> doesMatch v range
-        S.IntValue i -> any (\(IntRange lo hi) -> (lo <= i) && (i <= hi)) ranges
-        _            -> throw $ IncorrectType "case expression" TypeInt val
+doesMatch (S.NamedValue _ v) range = doesMatch v range
+doesMatch (S.IntValue i) (CaseDecl ranges _) = any (\(IntRange lo hi) -> (lo <= i) && (i <= hi)) ranges
+doesMatch val _ = throw $ IncorrectType "case expression" TypeInt val

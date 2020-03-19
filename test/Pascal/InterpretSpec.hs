@@ -43,7 +43,7 @@ mockBlock = D.Block [] []
 spec :: Spec
 spec = do
     describe "declareNativeFunctions" $ do
-        it "declares all native functions" $ do
+        it "should declare all native functions" $ do
             let ids = map D.Id ["sqrt", "sin", "cos", "exp", "ln", "writeln", "readln"]
 
             Just vals <- run (sequence . extract) $ do
@@ -52,89 +52,153 @@ spec = do
 
             mapM_ (uncurry shouldBe) $ zip (map (S.nfName . S.getNativeFunc) vals) ids
 
+    describe "evalExpr" $ do
+        it "should cast literals to their corresponding values" $ do
+            let exprs = [D.IntExpr 1, D.BoolExpr True, D.StrExpr "expr", D.FltExpr 1.0]
+                vals = [S.IntValue 1, S.BoolValue True, S.StrValue "expr", S.FloatValue 1.0]
+
+            Just actualVals <- run (sequence . extract) $ do
+                mapM I.evalExpr exprs
+
+            mapM_ (uncurry shouldBe) $ zip actualVals vals
+
+        it "should return value if lookup VarExpr finds it" $ do
+            let name = (D.Id "expr")
+                expr' = D.VarExpr name
+                val = S.NamedValue name $ S.BoolValue True
+
+            (run extract $ do
+                S.overwrite name val
+                I.evalExpr expr') >>= (`shouldBe` (Just val))
+
+        it "should return Nothing if lookup VarExpr doesnt find anything" $ do
+            let name = (D.Id "expr")
+                expr' = D.VarExpr name
+
+            (run extract $ I.evalExpr expr') >>= (`shouldBe` Nothing)
+
+        it "should combine LHS and RHS for binary expr if they're both OK" $ do
+            let e1 = D.StrExpr "foo"
+                e2 = D.StrExpr "bar"
+                expr' = D.BinaryExpr "+" e1 e2
+                val = S.StrValue "foobar"
+
+            (run extract $ I.evalExpr expr') >>= (`shouldBe` (Just val))
+
+        it "should return nothing for binary expr if either side is Nothing" $ do
+            let e1 = D.StrExpr "e1"
+                e2 = D.VarExpr $ D.Id "this shouldn't be found"
+                expr12 = D.BinaryExpr "+" e1 e2
+                expr21 = D.BinaryExpr "+" e2 e1
+
+            (run extract $ I.evalExpr expr12) >>= (`shouldBe` Nothing)
+            (run extract $ I.evalExpr expr21) >>= (`shouldBe` Nothing)
+
+    describe "visitFuncCall" $ do
+        it "should lookup and run native function" $ do
+            let name = D.Id "myFunc"
+                funcCall = D.FuncCall name []
+                expectedValue = S.IntValue 1
+                nativeFunc = S.NativeFuncValue $ S.NativeFunc name (\_ -> return $ Just expectedValue)
+
+            (run extract $ do
+                S.overwrite name nativeFunc
+                I.visitFuncCall funcCall
+                ) >>= (`shouldBe` (Just expectedValue))
+
+        it "should throw exception if cannot find function implementation" $ do
+            let name = D.Id "non-existent"
+                funcCall = D.FuncCall name []
+
+            (run extract $ do
+                I.visitFuncCall funcCall
+                ) `shouldThrow` anyException
+
+        -- TODO more tests
+
     describe "xor" $ do
-        it "works in all possible cases" $ do
-            I.xor True True `shouldBe` False
-            I.xor True False `shouldBe` True
-            I.xor False True `shouldBe` True
+        it "should work in all possible cases" $ do
+            I.xor True  True  `shouldBe` False
+            I.xor True  False `shouldBe` True
+            I.xor False True  `shouldBe` True
             I.xor False False `shouldBe` False
 
     describe "rvName" $ do
-        it "produces correct name for dummy function" $ do
+        it "should produce correct name for dummy function" $ do
             I.rvName mockFunc `shouldBe` (D.Id ".retval$name1")
 
     describe "cast" $ do
-        it "works as identity on same type" $ do
+        it "should work as identity on same type" $ do
             mapM_ (\v -> I.cast (S.typeOf v) v `shouldBe` (Just v)) mockValues
 
-        it "lifts named value before cast" $ do
+        it "should lift named value before cast" $ do
             mapM_ (\(v, nv) -> I.cast (S.typeOf v) nv `shouldBe` (Just v)) $ zip mockValues mockNamedValues
 
-        it "casts int to float" $ do
+        it "should cast int to float" $ do
             I.cast TypeFloat (S.IntValue 2) `shouldBe` (Just $ S.FloatValue 2)
 
-        it "refuses to cast float to int" $ do
+        it "should refuse to cast float to int" $ do
             I.cast TypeInt (S.FloatValue 2) `shouldBe` Nothing
 
-        it "refuses to cast int to bool" $ do
+        it "should refuse to cast int to bool" $ do
             I.cast TypeBool (S.IntValue 2) `shouldBe` Nothing
 
-        it "refuses to cast bool to int" $ do
+        it "should refuse to cast bool to int" $ do
             I.cast TypeInt (S.BoolValue False) `shouldBe` Nothing
 
     describe "mustCast" $ do
-        it "returns raw result if cast was ok" $ do
+        it "should return raw result if cast was ok" $ do
             let val = S.BoolValue False
             I.mustCast TypeBool val `shouldBe` val
 
-        it "throws something if cast failed" $ do
+        it "should throw something if cast failed" $ do
             let val = S.BoolValue False
             evaluate (I.mustCast TypeFunc val) `shouldThrow` anyException
 
     describe "splitAtSpace" $ do
-        it "splits at the first space on a normal string" $ do
+        it "should split at the first space on a normal string" $ do
             I.splitAtSpace "my string is cool" `shouldBe` ("my", "string is cool")
 
-        it "splits at the first character if that's a space" $ do
+        it "should split at the first character if that's a space" $ do
             I.splitAtSpace " space is first" `shouldBe` ("", "space is first")
 
-        it "splits on multiple spaces but doesn't trim" $ do
+        it "should split on multiple spaces but doesn't trim" $ do
             I.splitAtSpace "many  spaces" `shouldBe` ("many", " spaces")
 
-        it "splits empty string" $ do
+        it "should split empty string" $ do
             I.splitAtSpace "" `shouldBe` ("", "")
 
-        it "splits singleton string" $ do
+        it "should split singleton string" $ do
             I.splitAtSpace "a" `shouldBe` ("a", "")
 
-        it "splits singleton space" $ do
+        it "should split singleton space" $ do
             I.splitAtSpace " " `shouldBe` ("", "")
 
-        it "works if there are no spaces" $ do
+        it "should work if there are no spaces" $ do
             I.splitAtSpace "abcdef" `shouldBe` ("abcdef", "")
 
-        it "splits if the only space is the last character" $ do
+        it "should split if the only space is the last character" $ do
             I.splitAtSpace "abcdef " `shouldBe` ("abcdef", "")
 
     describe "isvar" $ do
-        it "returns true if a named value" $ do
+        it "should return true if a named value" $ do
             I.isvar (S.NamedValue (D.Id "myfunc") $ S.FuncValue mockFunc) `shouldBe` True
 
-        it "returns false if not a named value" $ do
+        it "should return false if not a named value" $ do
             I.isvar (S.FuncValue mockFunc) `shouldBe` False
 
     describe "doesMatch" $ do
-        it "rejects anything except NamedValue and IntValue" $ do
+        it "should reject anything except NamedValue and IntValue" $ do
             let decl = makeCaseDecl [(1, 1)]
             mapM_ (\val -> do
                 evaluate (I.doesMatch val decl) `shouldThrow` anyException
                 ) $ filter (not . (isOfType TypeInt)) mockValues
 
-        it "casts NamedValue to IntValue" $ do
+        it "should cast NamedValue to IntValue" $ do
             let decl = makeCaseDecl [(1, 1), (10, 10)]
             I.doesMatch (S.NamedValue (D.Id "myInt") $ S.IntValue 1) decl `shouldBe` True
 
-        it "doesnt cast NamedValue to anything besides IntValue" $ do
+        it "should doent cast NamedValue to anything besides IntValue" $ do
             let decl = makeCaseDecl [(1, 1)]
             mapM_ (\val -> do
                 evaluate (I.doesMatch val decl) `shouldThrow` anyException
@@ -154,7 +218,7 @@ spec = do
             I.doesMatch (S.IntValue 1) decl `shouldBe` False
 
     describe "combineToNum" $ do
-        it "applies '+', '*', '-' to operands" $ do
+        it "should apply '+', '*', '-' to operands" $ do
             let ops = ["+", "*", "-"]
                 results = [3, 2, -1]
                 n1 = 1 :: Integer
@@ -164,11 +228,11 @@ spec = do
                 (I.combineToNum op n1 n2, op) `shouldBe` (result, op)
                 ) $ zip ops results
 
-        it "throws on unknown operand" $ do
+        it "should throw on unknown operand" $ do
             evaluate (I.combineToNum "/" (1 :: Integer) (2 :: Integer)) `shouldThrow` anyException
 
     describe "combineToBool" $ do
-        it "applies '<>', '=', '>', '<', '<=', '>=' to operands" $ do
+        it "should apply '<>', '=', '>', '<', '<=', '>=' to operands" $ do
             let ops = ["<>", "=", ">", "<", "<=", ">="]
                 results = [True, False, False, True, True, False]
                 n1 = 1 :: Integer
@@ -178,5 +242,5 @@ spec = do
                 (I.combineToBool op n1 n2, op) `shouldBe` (result, op)
                 ) $ zip ops results
 
-        it "throws on unknown operand" $ do
+        it "should throw on unknown operand" $ do
             evaluate (I.combineToBool "?" (1 :: Integer) (2 :: Integer)) `shouldThrow` anyException

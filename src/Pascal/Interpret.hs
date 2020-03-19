@@ -129,20 +129,23 @@ mustEvalExpr e = do
         Nothing   -> throw $ S.CannotEval e
 
 evalExpr :: Expr -> S.AppState (Maybe S.Value)
-evalExpr e = do
-    case e of
-        VarExpr name        -> S.find name
-        IntExpr i           -> return $ Just $ S.IntValue i
-        BoolExpr b          -> return $ Just $ S.BoolValue b
-        StrExpr s           -> return $ Just $ S.StrValue s
-        FltExpr f           -> return $ Just $ S.FloatValue f
-        BinaryExpr op b1 b2 -> do
-            v1 <- mustEvalExpr b1
-            v2 <- mustEvalExpr b2
-            v3 <- combine op v1 v2
-            return $ Just v3
-        FuncCallExpr call   -> visitFuncCall call
-        _                   -> throw S.NotImplemented
+evalExpr e = case e of
+    VarExpr name        -> S.find name
+    IntExpr i           -> return $ Just $ S.IntValue i
+    BoolExpr b          -> return $ Just $ S.BoolValue b
+    StrExpr s           -> return $ Just $ S.StrValue s
+    FltExpr f           -> return $ Just $ S.FloatValue f
+    BinaryExpr op b1 b2 -> do
+        v1 <- evalExpr b1
+        v2 <- evalExpr b2
+        case (v1, v2) of
+            (Nothing, _) -> return Nothing
+            (_, Nothing) -> return Nothing
+            (Just v1', Just v2') -> do
+                v3 <- combine op v1' v2'
+                return $ Just v3
+    FuncCallExpr call   -> visitFuncCall call
+    _                   -> throw S.NotImplemented
 
 visitFuncCall :: FuncCall -> S.AppState (Maybe S.Value)
 visitFuncCall (FuncCall name exprs) = do

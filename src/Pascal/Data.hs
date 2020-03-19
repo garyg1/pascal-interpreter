@@ -6,7 +6,10 @@ module Pascal.Data where
 data Program = Program Id Block
     deriving (Show, Eq)
 
-data Block = Block [Decl] [Stmt]
+data Block = Block
+    { blockDecls :: [Decl]
+    , blockStmts :: [Stmt]
+    }
     deriving (Show, Eq)
 
 data Decl = VarDecls [VarDecl]

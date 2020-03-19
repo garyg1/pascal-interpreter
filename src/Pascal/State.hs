@@ -111,6 +111,12 @@ declare isConst name value = do
                 then setConst True name
                 else return ()
 
+declareVar :: Id -> Value -> AppState ()
+declareVar = declare False
+
+declareConst :: Id -> Value -> AppState ()
+declareConst = declare True
+
 mustFind :: Id -> AppState (Value)
 mustFind name = state $ \pstate -> case find' pstate name of
     Just x  -> (x, pstate)

@@ -1,9 +1,10 @@
 module Pascal.InterpretSpec (spec) where
 
 import           Control.Exception
-import           Pascal.Data       as D
-import           Pascal.Interpret  as I
-import           Pascal.State      as S
+import           Control.Monad.State (get)
+import           Pascal.Data         as D
+import           Pascal.Interpret    as I
+import           Pascal.State        as S
 import           Test.Hspec
 
 extract :: S.AppReturn a -> a
@@ -94,16 +95,22 @@ spec = do
             (run extract $ I.evalExpr expr12) >>= (`shouldBe` Nothing)
             (run extract $ I.evalExpr expr21) >>= (`shouldBe` Nothing)
 
-    describe "visitFuncCall" $ do
+    describe "evalFuncCall" $ do
+        let makeNF name action = S.NativeFuncValue $ S.NativeFunc name action
+            -- returns S.NativeFuncValue will project onto its `i`th argument
+            makeProjection i = let
+                name = (D.Id $ "get" ++ (show i))
+                in makeNF name (\args -> return $ Just $ args!!i)
+
         it "should lookup and run native function" $ do
             let name = D.Id "myFunc"
                 funcCall = D.FuncCall name []
                 expectedValue = S.IntValue 1
-                nativeFunc = S.NativeFuncValue $ S.NativeFunc name (\_ -> return $ Just expectedValue)
+                nativeFunc = makeNF name (\_ -> return $ Just expectedValue)
 
             (run extract $ do
                 S.overwrite name nativeFunc
-                I.visitFuncCall funcCall
+                I.evalFuncCall funcCall
                 ) >>= (`shouldBe` (Just expectedValue))
 
         it "should throw exception if cannot find function implementation" $ do
@@ -111,10 +118,145 @@ spec = do
                 funcCall = D.FuncCall name []
 
             (run extract $ do
-                I.visitFuncCall funcCall
+                I.evalFuncCall funcCall
                 ) `shouldThrow` anyException
 
-        -- TODO more tests
+        it "should evaluate arguments and pass them to native functions" $ do
+            let name1 = D.Id "getFirst"
+                e1 = D.StrExpr "foo"
+
+            (run extract $ do
+                S.overwrite name1 $ makeProjection 0
+                I.evalFuncCall $ D.FuncCall name1 [e1]
+                ) >>= (`shouldBe` (Just $ S.StrValue "foo"))
+
+        it "should pass arguments to AST Funcs" $ do
+            let funcName = D.Id "getFirst"
+                paramName = D.Id "myParam"
+                e1 = D.StrExpr "foo"
+                funcBody = D.Block [] [AssignStmt funcName (D.VarExpr paramName)]
+                f = D.Func {fname = funcName,
+                            params = [D.Decl paramName D.TypeString],
+                            returnType = D.TypeString,
+                            block = funcBody}
+
+            (run extract $ do
+                S.overwrite funcName $ S.FuncValue f
+                I.evalFuncCall $ D.FuncCall funcName [e1]
+                ) >>= (`shouldBe` (Just $ S.StrValue "foo"))
+
+    describe "evalFuncValue" $ do
+        let funcName = D.Id "getFirst"
+            paramName1 = D.Id "strParam"
+            paramName2 = D.Id "intParam"
+            parentScopeVarName = D.Id "inParentScope"
+            namedValue1 = S.NamedValue parentScopeVarName $ S.StrValue "original value"
+            namedValue2 = S.NamedValue parentScopeVarName $ S.StrValue "new value"
+            v1 = S.StrValue "foo"
+            v2 = S.IntValue 1
+            returnFirstArg = D.Func {
+                fname = funcName,
+                params = [D.Decl paramName1 D.TypeString, D.Decl paramName2 D.TypeInt],
+                returnType = D.TypeString,
+                block = D.Block {
+                    blockDecls = [],
+                    blockStmts = [D.AssignStmt funcName (D.VarExpr paramName1)]
+                    }
+                }
+            accessFirstArgReturnNone = D.Func {
+                fname = funcName,
+                params = [D.Decl paramName1 D.TypeString],
+                returnType = D.TypeNone,
+                block = D.Block {
+                    blockDecls = [],
+                    -- access arg here
+                    blockStmts = [D.AssignStmt paramName1 (D.VarExpr paramName1)]
+                    }
+                }
+            accessReturnButReturnNone = D.Func {
+                fname = funcName,
+                params = [],
+                returnType = D.TypeNone,
+                block = D.Block {
+                    blockDecls = [],
+                    -- should fail, since return value doesn't exist
+                    blockStmts = [D.AssignStmt funcName (D.IntExpr 1)]
+                    }
+                }
+            returnDefault = D.Func {
+                fname = funcName,
+                params = [],
+                returnType = D.TypeInt,
+                block = D.Block {
+                    blockDecls = [],
+                    blockStmts = []
+                    }
+                }
+            accessParentScope = D.Func {
+                fname = funcName,
+                params = [D.Decl paramName1 D.TypeString],
+                returnType = D.TypeNone,
+                block = D.Block {
+                    blockDecls = [],
+                    blockStmts = [D.AssignStmt parentScopeVarName (D.VarExpr paramName1)]
+                    }
+                }
+            duplicateDeclaration = D.Func {
+                fname = funcName,
+                params = [
+                    D.Decl paramName1 D.TypeString,
+                    D.Decl paramName1 D.TypeString
+                    ],
+                returnType = D.TypeNone,
+                block = D.Block {
+                    blockDecls = [],
+                    blockStmts = []
+                    }
+                }
+        it "should make arguments and return values accessible" $ do
+            (run extract $ do
+                -- function must be on the stack, to trigger conversion to return value
+                S.declareVar funcName $ S.FuncValue returnFirstArg
+
+                I.evalFuncValue returnFirstArg [v1, v2]
+                ) >>= (`shouldBe` (Just v1))
+
+        it "should return Nothing if no return value" $ do
+            (run extract $ do
+                I.evalFuncValue accessFirstArgReturnNone [v1]
+                ) >>= (`shouldBe` Nothing)
+
+        it "shouldn't put return value on stack return type is TypeNone" $ do
+            (run extract $ do
+                I.evalFuncValue accessReturnButReturnNone []
+                ) `shouldThrow` anyException -- illegal access
+
+        it "should set return value to default value for type" $ do
+            (run extract $ do
+                I.evalFuncValue returnDefault []
+                ) >>= (`shouldBe` (Just $ S.IntValue 0))
+
+        it "should allow changes to variables from global scope" $ do
+            (run extract $ do
+                S.overwrite parentScopeVarName namedValue1
+                _ <- I.evalFuncValue accessParentScope [namedValue2]
+                S.find parentScopeVarName
+                ) >>= (`shouldBe` (Just namedValue2))
+
+        it "should not allow duplicate parameter names" $ do
+            (run extract $ do
+                I.evalFuncValue duplicateDeclaration [namedValue1, namedValue2]
+                ) `shouldThrow` anyException -- duplicate declaration
+
+        it "should leave stack unchanged after execution" $ do
+            (stack1, stack2) <- (run extract $ do
+                S.declareVar funcName $ S.FuncValue returnFirstArg
+                stack1 <- get
+                _ <- I.evalFuncValue returnFirstArg [v1, v2]
+                stack2 <- get
+                return (stack1, stack2)
+                )
+            stack1 `shouldBe` stack2
 
     describe "xor" $ do
         it "should work in all possible cases" $ do

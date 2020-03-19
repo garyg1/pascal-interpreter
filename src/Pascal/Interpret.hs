@@ -34,7 +34,7 @@ visitVarDecl isConst decl = do
     S.declare isConst name $ S.NamedValue name val
 
 visitFuncDecl :: Func -> S.AppState ()
-visitFuncDecl func = S.declare False (fname func) (S.FuncValue func)
+visitFuncDecl func = S.declareVar (fname func) (S.FuncValue func)
 
 visitStmt :: Stmt -> S.AppState ()
 visitStmt stmt = case stmt of
@@ -60,7 +60,7 @@ visitStmt stmt = case stmt of
     ForDownToStmt cvarName e1 e2 st -> visitForStmt False cvarName e1 e2 st
 
     FuncCallStmt call -> do
-        _ <- visitFuncCall call
+        _ <- evalFuncCall call
         return ()
 
     IfStmt ifExpr thenStmt -> visitStmt $ IfElseStmt ifExpr thenStmt (Stmts [])
@@ -131,6 +131,7 @@ mustEvalExpr e = do
 evalExpr :: Expr -> S.AppState (Maybe S.Value)
 evalExpr e = case e of
     VarExpr name        -> S.find name
+    FuncCallExpr call   -> evalFuncCall call
     IntExpr i           -> return $ Just $ S.IntValue i
     BoolExpr b          -> return $ Just $ S.BoolValue b
     StrExpr s           -> return $ Just $ S.StrValue s
@@ -144,27 +145,29 @@ evalExpr e = case e of
             (Just v1', Just v2') -> do
                 v3 <- combine op v1' v2'
                 return $ Just v3
-    FuncCallExpr call   -> visitFuncCall call
     _                   -> throw S.NotImplemented
 
-visitFuncCall :: FuncCall -> S.AppState (Maybe S.Value)
-visitFuncCall (FuncCall name exprs) = do
+evalFuncCall :: FuncCall -> S.AppState (Maybe S.Value)
+evalFuncCall (FuncCall name exprs) = do
     defn <- S.mustFind name
     args <- mapM mustEvalExpr exprs
     case defn of
         S.NativeFuncValue (NativeFunc _ fn) -> fn args
-        S.FuncValue func -> do
-            let returnName = rvName func
-            S.pushEmpty
-            mapM_ (\(a, p) -> S.overwrite (dname p) a) $ zip args (params func)
-            if (returnType func) /= TypeNone
-                then S.overwrite returnName (valueOf $ returnType func)
-                else return ()
-            visitBlock (block func)
-            rv <- S.find returnName
-            S.pop
-            return rv
-        _ -> throw S.NotImplemented
+        S.FuncValue func                    -> evalFuncValue func args
+        _                                   -> throw S.NotImplemented
+
+evalFuncValue :: Func -> [S.Value] -> S.AppState (Maybe S.Value)
+evalFuncValue func args = do
+    let returnName = rvName func
+    S.pushEmpty
+    mapM_ (\(a, p) -> S.declareVar (dname p) a) $ zip args (params func)
+    if (returnType func) /= TypeNone
+        then S.overwrite returnName (valueOf $ returnType func)
+        else return ()
+    visitBlock (block func)
+    rv <- S.find returnName
+    S.pop
+    return rv
 
 declareNativeFunctions :: S.AppState ()
 declareNativeFunctions = do

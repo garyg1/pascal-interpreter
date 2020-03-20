@@ -30,7 +30,6 @@ executable RunPascal
   build-depends:       base >= 4.7
                       , bytestring
                       , array
-                      , hspec
                       , containers
                       , mtl
   build-tools:         happy, alex

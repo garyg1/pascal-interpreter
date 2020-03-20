@@ -4,9 +4,9 @@ import           Control.Exception
 import           Control.Monad.Except
 import           Control.Monad.State  (get)
 import           Data.Maybe           (fromJust)
-import           Pascal.Data          as D
-import           Pascal.Interpret     as I
-import           Pascal.State         as S
+import qualified Pascal.Data          as D
+import qualified Pascal.Interpret     as I
+import qualified Pascal.State         as S
 import           Test.Hspec
 
 extract :: S.AppReturn a -> a
@@ -38,12 +38,12 @@ isOfType :: D.PascalType -> S.Value -> Bool
 isOfType t v = S.typeOf v == t
 
 mockFunc :: D.Func
-mockFunc = D.Func (Id "name1") [] TypeBool mockBlock
+mockFunc = D.Func (D.Id "name1") [] D.TypeBool mockBlock
 
 mockBlock :: D.Block
 mockBlock = D.Block [] []
 
-makeNF :: Id -> ([S.Value] -> S.AppState (Maybe S.Value)) -> S.Value
+makeNF :: D.Id -> ([S.Value] -> S.AppState (Maybe S.Value)) -> S.Value
 makeNF name action = S.NativeFuncValue $ S.NativeFunc name action
 
 -- returns a S.NativeFuncValue that will return its `i`th argument
@@ -132,23 +132,52 @@ spec = do
             run extract (do
                 S.overwrite name1 $ makeProjection 0
                 I.evalFuncCall $ D.FuncCall name1 [e1]
-                ) >>= (pure . fromJust) 
+                ) >>= (pure . fromJust)
                   >>= (`shouldBe` S.StrValue "foo")
 
         it "should pass arguments to AST Funcs" $ do
             let funcName = D.Id "getFirst"
                 paramName = D.Id "myParam"
                 e1 = D.StrExpr "foo"
-                funcBody = D.Block [] [AssignStmt funcName (D.VarExpr paramName)]
-                f = D.Func {fname = funcName,
-                            params = [D.Decl paramName D.TypeString],
-                            returnType = D.TypeString,
-                            block = funcBody}
+                funcBody = D.Block [] [D.AssignStmt funcName (D.VarExpr paramName)]
+                f = D.Func {D.fname = funcName,
+                            D.params = [D.Decl paramName D.TypeString],
+                            D.returnType = D.TypeString,
+                            D.block = funcBody}
             run extract (do
                 S.overwrite funcName $ S.FuncValue f
                 I.evalFuncCall $ D.FuncCall funcName [e1]
-                ) >>= (pure . getValue . fromJust)
+                ) >>= (pure . S.getValue . fromJust)
                   >>= (`shouldBe` S.StrValue "foo")
+
+    describe "visitIfElseStmt" $ do
+        let unknownVarName = D.Id "unknown"
+            unknownVarExpr = D.VarExpr unknownVarName
+            intExpr = D.IntExpr 1
+            trueExpr = D.BoolExpr True
+            falseExpr = D.BoolExpr False
+            passStmt = D.Stmts []
+            throwStmt = error "error, unexpected"
+
+        it "should throw if cannot evalutate if expression" $
+            run extract (
+                I.visitIfElseStmt unknownVarExpr passStmt passStmt
+                ) `shouldThrow` anyException
+
+        it "should throw if cannot cast if expression result to Bool" $
+            run extract (
+                I.visitIfElseStmt intExpr passStmt passStmt
+                ) `shouldThrow` anyException
+
+        it "should run the first statement if the 'if' expression is True" $
+            run extract (
+                I.visitIfElseStmt trueExpr passStmt throwStmt
+                ) >>= (`shouldBe` ())
+
+        it "should run the second statement if the 'if' expression is False" $
+            run extract (
+                I.visitIfElseStmt falseExpr throwStmt passStmt
+                ) >>= (`shouldBe` ())
 
     describe "visitAssignStmt" $ do
         let unknownVarName = D.Id "unknown"
@@ -156,24 +185,24 @@ spec = do
             name2 = D.Id "exists2"
             twoExpr = D.IntExpr 2
             badExpr = D.VarExpr unknownVarName
-            mockFunc1 = D.Func (Id "name1") [] TypeBool mockBlock
-            mockFunc2 = D.Func (Id "name2") [] TypeBool mockBlock
+            mockFunc1 = D.Func (D.Id "name1") [] D.TypeBool mockBlock
+            mockFunc2 = D.Func (D.Id "name2") [] D.TypeBool mockBlock
 
         it "should throw if cannot evaluate RHS expression" $
             run extract (do
                 S.declareVar name1 $ S.IntValue 1
-                visitAssignStmt name1 badExpr
+                I.visitAssignStmt name1 badExpr
                 ) `shouldThrow` anyException
 
         it "should throw if LHS variable is undeclared" $
             run extract (
-                visitAssignStmt unknownVarName twoExpr
+                I.visitAssignStmt unknownVarName twoExpr
                 ) `shouldThrow` anyException
 
         it "should evaluate RHS expr and assign it to the LHS name if they are of same non-FuncValue type" $
             run extract (do
                 S.declareVar name1 $ S.IntValue 1
-                visitAssignStmt name1 twoExpr
+                I.visitAssignStmt name1 twoExpr
                 S.find name1
                 ) >>= (`shouldBe` Just (S.NamedValue name1 $ S.IntValue 2))
 
@@ -181,7 +210,7 @@ spec = do
             run extract (do
                 S.declareVar name1 $ S.FuncValue mockFunc1
                 S.declareVar name2 $ S.FuncValue mockFunc2
-                visitAssignStmt name1 $ D.VarExpr name2
+                I.visitAssignStmt name1 $ D.VarExpr name2
                 S.find name1
                 ) >>= (`shouldBe` Just (S.FuncValue mockFunc2))
 
@@ -192,20 +221,19 @@ spec = do
                 S.declareVar retValName $ S.BoolValue False
                 S.declareVar name2 $ S.BoolValue True
 
-                visitAssignStmt name1 $ D.VarExpr name2
-                
+                I.visitAssignStmt name1 $ D.VarExpr name2
+
                 S.find retValName
-                ) >>= (pure . getValue . fromJust)
+                ) >>= (pure . S.getValue . fromJust)
                   >>= (`shouldBe` S.BoolValue True)
 
         it "should allow NativeFunctions to be assigned to each other" $
             run extract (do
                 S.declareVar name1 $ makeProjection 0
                 S.declareVar name2 $ makeProjection 1
-                visitAssignStmt name1 $ D.VarExpr name2
+                I.visitAssignStmt name1 $ D.VarExpr name2
                 S.mustFind name1
                 ) >>= (`shouldBe` makeProjection 1)
-
 
     describe "visitCaseElseStmt" $ do
         let unknownVarName = D.Id "unknown"
@@ -218,39 +246,39 @@ spec = do
         it "should throw if cannot evaluate case expression" $ do
             let caseDecls = [D.CaseDecl [match1] thenPass]
             run extract (
-                visitCaseElseStmt (D.VarExpr unknownVarName) caseDecls (D.Stmts [])
+                I.visitCaseElseStmt (D.VarExpr unknownVarName) caseDecls (D.Stmts [])
                 ) `shouldThrow` anyException
 
         it "should throw if there are no case declarations" $
             run extract (
-                visitCaseElseStmt oneExpr [] (D.Stmts [])
+                I.visitCaseElseStmt oneExpr [] (D.Stmts [])
                 ) `shouldThrow` anyException
 
         it "should throw if case expression is not an IntValue" $ do
             let caseDecls = [D.CaseDecl [match1] thenPass]
             run extract (
-                visitCaseElseStmt (D.FltExpr 1.0) caseDecls (D.Stmts [])
+                I.visitCaseElseStmt (D.FltExpr 1.0) caseDecls (D.Stmts [])
                 ) `shouldThrow` anyException
 
         it "should visit case statement of first matching case declaration" $ do
             let caseDecls = [D.CaseDecl [match1] thenPass,
                              D.CaseDecl [match1] thenThrow]
             run extract (
-                visitCaseElseStmt oneExpr caseDecls thenThrow
+                I.visitCaseElseStmt oneExpr caseDecls thenThrow
                 ) >>= (`shouldBe` ())
 
         it "should not visit case statement of a subsequent matching case declaration" $ do
             let caseDecls = [D.CaseDecl [match1] thenPass,
                              D.CaseDecl [match1] thenThrow]
             run extract (
-                visitCaseElseStmt oneExpr caseDecls thenThrow
+                I.visitCaseElseStmt oneExpr caseDecls thenThrow
                 ) >>= (`shouldBe` ())
 
         it "should visit else statement if no cases match" $ do
             let caseDecls = [D.CaseDecl [match2] thenThrow,
                              D.CaseDecl [match2] thenThrow]
             run extract (
-                visitCaseElseStmt oneExpr caseDecls thenPass
+                I.visitCaseElseStmt oneExpr caseDecls thenPass
                 ) >>= (`shouldBe` ())
 
     describe "visitWhileStmt" $ do
@@ -280,19 +308,19 @@ spec = do
             setupWhileNTimes n stmts = do
                 let dummyVar = makeNamedInt n
                 S.declareVar dummyVarName dummyVar
-                return D.WhileStmt {getWhileExpr = D.BinaryExpr ">" dummyVarRef zero,
-                                    getWhileStmt = D.Stmts $ decrementDummyVar : stmts}
+                return D.WhileStmt {D.getWhileExpr = D.BinaryExpr ">" dummyVarRef zero,
+                                    D.getWhileStmt = D.Stmts $ decrementDummyVar : stmts}
 
         it "should throw if it can't evaluate the while condition" $ do
-            let whileStmt = D.WhileStmt {getWhileExpr = unknownVarRef,
-                                         getWhileStmt = D.Stmts []}
+            let whileStmt = D.WhileStmt {D.getWhileExpr = unknownVarRef,
+                                         D.getWhileStmt = D.Stmts []}
             run extract (
                 I.visitWhileStmt whileStmt
                 ) `shouldThrow` anyException -- cannot eval
 
         it "should throw if the while condition is of incorrect type" $ do
-            let whileStmt = D.WhileStmt {getWhileExpr = D.IntExpr 1,
-                                         getWhileStmt = D.Stmts []}
+            let whileStmt = D.WhileStmt {D.getWhileExpr = D.IntExpr 1,
+                                         D.getWhileStmt = D.Stmts []}
             run extract (
                 I.visitWhileStmt whileStmt
                 ) `shouldThrow` anyException -- incorrect type
@@ -335,7 +363,7 @@ spec = do
             zeroExpr = D.IntExpr 0
             oneExpr = D.IntExpr 1
             badExpr = D.VarExpr $ D.Id "doesntExist"
-            forTo = visitForStmt True
+            forTo = I.visitForStmt True
             nameLoopCount = D.Id "loopCount"
             incrementLoopCount = D.AssignStmt nameLoopCount $ D.BinaryExpr "+" (D.VarExpr nameLoopCount) oneExpr
 
@@ -352,7 +380,8 @@ spec = do
             runCountLoops isUp begin end stmts = do
                 S.declareVar nameLoopCount $ S.NamedValue nameLoopCount zero
                 S.declareVar nameI zero
-                visitForStmt isUp nameI (D.IntExpr begin) (D.IntExpr end) (Stmts $ stmts ++ [incrementLoopCount])
+                I.visitForStmt isUp nameI (D.IntExpr begin) (D.IntExpr end) 
+                    (D.Stmts $ stmts ++ [incrementLoopCount])
 
             runCountLoopsUp :: Int -> Int -> [D.Stmt] -> S.AppState ()
             runCountLoopsUp = runCountLoops True
@@ -360,36 +389,36 @@ spec = do
         it "should throw if `start` cannot be evaluated" $
             run extract (do
                 S.declareVar nameI zero
-                forTo nameI badExpr zeroExpr (Stmts [])
+                forTo nameI badExpr zeroExpr (D.Stmts [])
                 ) `shouldThrow` anyException -- cannot eval
 
         it "should throw if `end` cannot be evaluated" $
             run extract (do
                 S.declareVar nameI zero
-                forTo nameI zeroExpr badExpr (Stmts [])
+                forTo nameI zeroExpr badExpr (D.Stmts [])
                 ) `shouldThrow` anyException -- cannot eval
 
         it "should throw if iteration var is const" $
             run extract (do
                 S.declareConst nameI zero
-                forTo nameI zeroExpr oneExpr (Stmts [])
+                forTo nameI zeroExpr oneExpr (D.Stmts [])
                 ) `shouldThrow` anyException -- cannot assign to const
 
         it "should throw if iteration var is undeclared" $
             run extract (
-                forTo nameI zeroExpr oneExpr (Stmts [])
+                forTo nameI zeroExpr oneExpr (D.Stmts [])
                 ) `shouldThrow` anyException -- cannot assign to const
 
         it "should throw if iteration var is not of type IntValue" $
             run extract (do
                 S.declareVar nameI $ S.FloatValue 1.0
-                forTo nameI zeroExpr oneExpr (Stmts [])
+                forTo nameI zeroExpr oneExpr (D.Stmts [])
                 ) `shouldThrow` anyException -- type mismatch
 
         it "should throw if iteration var is not of type IntValue" $
             run extract (do
                 S.declareVar nameI $ S.FloatValue 1.0
-                forTo nameI zeroExpr oneExpr (Stmts [])
+                forTo nameI zeroExpr oneExpr (D.Stmts [])
                 ) `shouldThrow` anyException -- incorrect type
 
         it "should allow modifying variables in outer scopes" $
@@ -468,62 +497,62 @@ spec = do
             v1 = S.StrValue "foo"
             v2 = S.IntValue 1
             returnFirstArg = D.Func {
-                fname = funcName,
-                params = [D.Decl paramName1 D.TypeString, D.Decl paramName2 D.TypeInt],
-                returnType = D.TypeString,
-                block = D.Block {
-                    blockDecls = [],
-                    blockStmts = [D.AssignStmt funcName (D.VarExpr paramName1)]
+                D.fname = funcName,
+                D.params = [D.Decl paramName1 D.TypeString, D.Decl paramName2 D.TypeInt],
+                D.returnType = D.TypeString,
+                D.block = D.Block {
+                    D.blockDecls = [],
+                    D.blockStmts = [D.AssignStmt funcName (D.VarExpr paramName1)]
                     }
                 }
             accessFirstArgReturnNone = D.Func {
-                fname = funcName,
-                params = [D.Decl paramName1 D.TypeString],
-                returnType = D.TypeNone,
-                block = D.Block {
-                    blockDecls = [],
+                D.fname = funcName,
+                D.params = [D.Decl paramName1 D.TypeString],
+                D.returnType = D.TypeNone,
+                D.block = D.Block {
+                    D.blockDecls = [],
                     -- access arg here
-                    blockStmts = [D.AssignStmt paramName1 (D.VarExpr paramName1)]
+                    D.blockStmts = [D.AssignStmt paramName1 (D.VarExpr paramName1)]
                     }
                 }
             accessReturnButReturnNone = D.Func {
-                fname = funcName,
-                params = [],
-                returnType = D.TypeNone,
-                block = D.Block {
-                    blockDecls = [],
+                D.fname = funcName,
+                D.params = [],
+                D.returnType = D.TypeNone,
+                D.block = D.Block {
+                    D.blockDecls = [],
                     -- should fail, since return value doesn't exist
-                    blockStmts = [D.AssignStmt funcName (D.IntExpr 1)]
+                    D.blockStmts = [D.AssignStmt funcName (D.IntExpr 1)]
                     }
                 }
             returnDefault = D.Func {
-                fname = funcName,
-                params = [],
-                returnType = D.TypeInt,
-                block = D.Block {
-                    blockDecls = [],
-                    blockStmts = []
+                D.fname = funcName,
+                D.params = [],
+                D.returnType = D.TypeInt,
+                D.block = D.Block {
+                    D.blockDecls = [],
+                    D.blockStmts = []
                     }
                 }
             accessParentScope = D.Func {
-                fname = funcName,
-                params = [D.Decl paramName1 D.TypeString],
-                returnType = D.TypeNone,
-                block = D.Block {
-                    blockDecls = [],
-                    blockStmts = [D.AssignStmt parentScopeVarName (D.VarExpr paramName1)]
+                D.fname = funcName,
+                D.params = [D.Decl paramName1 D.TypeString],
+                D.returnType = D.TypeNone,
+                D.block = D.Block {
+                    D.blockDecls = [],
+                    D.blockStmts = [D.AssignStmt parentScopeVarName (D.VarExpr paramName1)]
                     }
                 }
             duplicateDeclaration = D.Func {
-                fname = funcName,
-                params = [
+                D.fname = funcName,
+                D.params = [
                     D.Decl paramName1 D.TypeString,
                     D.Decl paramName1 D.TypeString
                     ],
-                returnType = D.TypeNone,
-                block = D.Block {
-                    blockDecls = [],
-                    blockStmts = []
+                D.returnType = D.TypeNone,
+                D.block = D.Block {
+                    D.blockDecls = [],
+                    D.blockStmts = []
                     }
                 }
         it "should make arguments and return values accessible" $
@@ -532,7 +561,7 @@ spec = do
                 S.declareVar funcName $ S.FuncValue returnFirstArg
 
                 I.evalFuncValue returnFirstArg [v1, v2]
-                ) >>= (pure . getValue . fromJust)
+                ) >>= (pure . S.getValue . fromJust)
                   >>= (`shouldBe` v1)
 
         it "should return Nothing if no return value" $
@@ -591,25 +620,25 @@ spec = do
             mapM_ (\(v, nv) -> I.cast (S.typeOf v) nv `shouldBe` Just v) $ zip mockValues mockNamedValues
 
         it "should cast int to float" $
-            I.cast TypeFloat (S.IntValue 2) `shouldBe` Just (S.FloatValue 2)
+            I.cast D.TypeFloat (S.IntValue 2) `shouldBe` Just (S.FloatValue 2)
 
         it "should refuse to cast float to int" $
-            I.cast TypeInt (S.FloatValue 2) `shouldBe` Nothing
+            I.cast D.TypeInt (S.FloatValue 2) `shouldBe` Nothing
 
         it "should refuse to cast int to bool" $
-            I.cast TypeBool (S.IntValue 2) `shouldBe` Nothing
+            I.cast D.TypeBool (S.IntValue 2) `shouldBe` Nothing
 
         it "should refuse to cast bool to int" $
-            I.cast TypeInt (S.BoolValue False) `shouldBe` Nothing
+            I.cast D.TypeInt (S.BoolValue False) `shouldBe` Nothing
 
     describe "mustCast" $ do
         it "should return raw result if cast was ok" $ do
             let val = S.BoolValue False
-            I.mustCast TypeBool val `shouldBe` val
+            I.mustCast D.TypeBool val `shouldBe` val
 
         it "should throw something if cast failed" $ do
             let val = S.BoolValue False
-            evaluate (I.mustCast TypeFunc val) `shouldThrow` anyException
+            evaluate (I.mustCast D.TypeFunc val) `shouldThrow` anyException
 
     describe "splitAtSpace" $ do
         it "should split at the first space on a normal string" $
@@ -648,7 +677,7 @@ spec = do
             let decl = makeCaseDecl [(1, 1)]
             mapM_ (\val ->
                 evaluate (I.doesMatch val decl) `shouldThrow` anyException
-                ) $ filter (not . isOfType TypeInt) mockValues
+                ) $ filter (not . isOfType D.TypeInt) mockValues
 
         it "should cast NamedValue to IntValue" $ do
             let decl = makeCaseDecl [(1, 1), (10, 10)]
@@ -658,7 +687,7 @@ spec = do
             let decl = makeCaseDecl [(1, 1)]
             mapM_ (\val ->
                 evaluate (I.doesMatch val decl) `shouldThrow` anyException
-                ) $ filter (not . isOfType TypeInt . S.getValue) mockNamedValues
+                ) $ filter (not . isOfType D.TypeInt . S.getValue) mockNamedValues
 
         it "return True if IntValue matches either end point" $ do
             let decl = makeCaseDecl [(1, 2)]

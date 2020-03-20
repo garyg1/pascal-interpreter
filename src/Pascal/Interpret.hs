@@ -25,11 +25,9 @@ visitVarDecl :: Bool -> VarDecl -> S.AppState ()
 visitVarDecl isConst decl = do
     let name = dname decl
     val <- case decl of
-        Decl _ type' -> return $ S.valueOf type'
-        DeclTypeDefn _ type' expr' -> do
-            val' <- mustEvalExpr expr'
-            return $ mustCast type' val'
-        DeclDefn _ expr' -> mustEvalExpr expr'
+        Decl _ type'               -> return $ S.valueOf type'
+        DeclDefn _ expr'           -> mustEvalExpr expr'
+        DeclTypeDefn _ type' expr' -> mustEvalExpr expr' >>= (pure . mustCast type')
     S.declare isConst name $ S.NamedValue name val
 
 visitFuncDecl :: Func -> S.AppState ()

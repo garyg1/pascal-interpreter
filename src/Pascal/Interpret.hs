@@ -24,13 +24,12 @@ visitDecl decl = case decl of
 visitVarDecl :: Bool -> VarDecl -> S.AppState ()
 visitVarDecl isConst decl = do
     let name = dname decl
-    val <- (case decl of
+    val <- case decl of
         Decl _ type' -> return $ S.valueOf type'
         DeclTypeDefn _ type' expr' -> do
             val' <- mustEvalExpr expr'
             return $ mustCast type' val'
         DeclDefn _ expr' -> mustEvalExpr expr'
-        )
     S.declare isConst name $ S.NamedValue name val
 
 visitFuncDecl :: Func -> S.AppState ()
@@ -51,7 +50,7 @@ visitStmt stmt = case stmt of
     IfElseStmt i t e -> visitIfElseStmt i t e
     IfStmt ifExpr thenStmt -> visitIfElseStmt ifExpr thenStmt (Stmts [])
     Stmts stmts -> mapM_ visitStmt stmts
-    WhileStmt _ _ -> catchError (visitWhileStmt stmt) (\evt -> case evt of
+    WhileStmt _ _ -> catchError (visitWhileStmt stmt) (\case
             S.Break    -> return ()
             S.Continue -> throw $ S.InternalError "unknown error 'continue' thrown"
         )
@@ -66,6 +65,7 @@ visitAssignStmt name e = do
         (_, rhs')                      -> S.mustReplace name $ S.NamedValue name $ mustCast (S.typeOf lhs) rhs'
 
 visitCaseElseStmt :: Expr -> [CaseDecl] -> Stmt -> S.AppState ()
+visitCaseElseStmt _ [] _ = throw $ S.InternalError "Unexpected empty case statement"
 visitCaseElseStmt caseExpr cases elseStmt = do
     val <- mustEvalExpr caseExpr
     case filter (doesMatch val) cases of
@@ -102,10 +102,10 @@ visitForStmt isUp name start end doStmt = do
                 else reverse [endVal' .. startVal']
 
         setIterationVar name endVal'
-        ) (\evt -> case evt of
+        ) (\case
             S.Break -> return ()
             _       -> throw $ S.InternalError "unknown error thrown"
-        )
+            )
 
     -- this is OK, since `name` was definitely VAR before it was loop variable
     S.setConst False name
@@ -114,8 +114,8 @@ visitIfElseStmt :: Expr -> Stmt -> Stmt -> S.AppState ()
 visitIfElseStmt ifExpr thenStmt elseStmt = do
     val <- mustEvalExpr ifExpr
     case cast TypeBool val of
-        Just (S.BoolValue True)  -> do visitStmt thenStmt
-        Just (S.BoolValue False) -> do visitStmt elseStmt
+        Just (S.BoolValue True)  -> visitStmt thenStmt
+        Just (S.BoolValue False) -> visitStmt elseStmt
         _                        -> throw $ S.IncorrectType "if condition" TypeBool val
 
 visitWhileStmt :: Stmt -> S.AppState ()
@@ -138,7 +138,7 @@ setIterationVar name newVal = do
     S.mustReplace name $ S.NamedValue name $ S.IntValue newVal
     S.setConst True name
 
-mustEvalExpr :: Expr -> S.AppState (S.Value)
+mustEvalExpr :: Expr -> S.AppState S.Value
 mustEvalExpr e = do
     val <- evalExpr e
     case val of
@@ -178,9 +178,8 @@ evalFuncValue func args = do
     let returnName = rvName func
     S.pushEmpty
     mapM_ (\(a, p) -> S.declareVar (dname p) a) $ zip args (params func)
-    if (returnType func) /= TypeNone
-        then S.overwrite returnName (S.valueOf $ returnType func)
-        else return ()
+    when (returnType func /= TypeNone) $
+        S.overwrite returnName (S.valueOf $ returnType func)
     visitBlock (block func)
     rv <- S.find returnName
     S.pop
@@ -198,9 +197,8 @@ declareNativeFunctions = do
 
 readln :: [S.Value] -> S.AppState (Maybe S.Value)
 readln args = do
-    if not $ all isvar args
-        then throw $ S.VariableExpected "readln"
-        else return ()
+    unless (all isvar args) $
+        throw $ S.VariableExpected "readln"
     foldM_ (\(line, shouldFlush) (S.NamedValue name val) -> do
         line' <- if shouldFlush then liftIO getLine else return line
         case S.typeOf val of
@@ -225,12 +223,12 @@ writeln args = liftIO $ do
 
 nativeFuncFrom :: Id -> (Float -> Float) -> S.Value
 nativeFuncFrom name fn = S.NativeFuncValue $ S.NativeFunc name $ \(arg : rest) ->
-    if length rest /= 0
-        then throw $ S.IncorrectArgs name (arg : rest) [Decl (Id "operand") TypeInt]
-        else let (S.FloatValue f) = mustCast TypeFloat arg
+    if null rest
+        then let (S.FloatValue f) = mustCast TypeFloat arg
             in return $ Just $ S.FloatValue $ fn f
+        else throw $ S.IncorrectArgs name (arg : rest) [Decl (Id "operand") TypeInt]
 
-combine :: String -> S.Value -> S.Value -> S.AppState (S.Value)
+combine :: String -> S.Value -> S.Value -> S.AppState S.Value
 combine op (S.NamedValue _ v1') v2 = combine op v1' v2
 combine op v1 (S.NamedValue _ v2') = combine op v1 v2'
 combine op v1 v2 = case (v1, v2) of
@@ -302,7 +300,7 @@ xor True a  = not a
 xor False a = a
 
 rvName :: Func -> Id
-rvName f = (Id $ ".retval$" ++ (toString . fname $ f))
+rvName f = Id $ ".retval$" ++ (toString . fname $ f)
 
 cast :: PascalType -> S.Value -> Maybe S.Value
 cast type' val = case (val, type') of
@@ -321,7 +319,7 @@ mustCast t v = case cast t v of
     Nothing -> throw $ S.CannotCast t v
 
 -- partially inspired by https://stackoverflow.com/q/40297001/8887313
-splitAtSpace :: [Char] -> ([Char], [Char])
+splitAtSpace :: String -> (String, String)
 splitAtSpace (' ' : after) = ([], after)
 splitAtSpace (x : xs) = let
     (rest, after) = splitAtSpace xs

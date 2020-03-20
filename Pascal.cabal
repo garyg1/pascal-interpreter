@@ -35,6 +35,9 @@ executable RunPascal
   build-tools:         happy, alex
   default-language:    Haskell2010
   ghc-options:         -Wall
+  default-extensions: LambdaCase
+                      
+
 
 Test-Suite Unit
     type:                 exitcode-stdio-1.0
@@ -56,3 +59,4 @@ Test-Suite Unit
     build-tool-depends:   hspec-discover:hspec-discover == 2.*
     default-language:     Haskell2010
     ghc-options:          -Wall -fno-warn-missing-home-modules
+    default-extensions: LambdaCase

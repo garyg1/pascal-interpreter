@@ -44,7 +44,7 @@ mockBlock = D.Block [] []
 
 spec :: Spec
 spec = do
-    describe "declareNativeFunctions" $ do
+    describe "declareNativeFunctions" $
         it "should declare all native functions" $ do
             let ids = map D.Id ["sqrt", "sin", "cos", "exp", "ln", "writeln", "readln"]
 
@@ -59,25 +59,24 @@ spec = do
             let exprs = [D.IntExpr 1, D.BoolExpr True, D.StrExpr "expr", D.FltExpr 1.0]
                 vals = [S.IntValue 1, S.BoolValue True, S.StrValue "expr", S.FloatValue 1.0]
 
-            Just actualVals <- run (sequence . extract) $ do
-                mapM I.evalExpr exprs
+            Just actualVals <- run (sequence . extract) $ mapM I.evalExpr exprs
 
             mapM_ (uncurry shouldBe) $ zip actualVals vals
 
         it "should return value if lookup VarExpr finds it" $ do
-            let name = (D.Id "expr")
+            let name = D.Id "expr"
                 expr' = D.VarExpr name
                 val = S.NamedValue name $ S.BoolValue True
 
-            (run extract $ do
+            run extract (do
                 S.overwrite name val
-                I.evalExpr expr') >>= (`shouldBe` (Just val))
+                I.evalExpr expr') >>= (`shouldBe` Just val)
 
         it "should return Nothing if lookup VarExpr doesnt find anything" $ do
-            let name = (D.Id "expr")
+            let name = D.Id "expr"
                 expr' = D.VarExpr name
 
-            (run extract $ I.evalExpr expr') >>= (`shouldBe` Nothing)
+            run extract (I.evalExpr expr') >>= (`shouldBe` Nothing)
 
         it "should combine LHS and RHS for binary expr if they're both OK" $ do
             let e1 = D.StrExpr "foo"
@@ -85,7 +84,7 @@ spec = do
                 expr' = D.BinaryExpr "+" e1 e2
                 val = S.StrValue "foobar"
 
-            (run extract $ I.evalExpr expr') >>= (`shouldBe` (Just val))
+            run extract (I.evalExpr expr') >>= (`shouldBe` Just val)
 
         it "should return nothing for binary expr if either side is Nothing" $ do
             let e1 = D.StrExpr "e1"
@@ -93,14 +92,14 @@ spec = do
                 expr12 = D.BinaryExpr "+" e1 e2
                 expr21 = D.BinaryExpr "+" e2 e1
 
-            (run extract $ I.evalExpr expr12) >>= (`shouldBe` Nothing)
-            (run extract $ I.evalExpr expr21) >>= (`shouldBe` Nothing)
+            run extract (I.evalExpr expr12) >>= (`shouldBe` Nothing)
+            run extract (I.evalExpr expr21) >>= (`shouldBe` Nothing)
 
     describe "evalFuncCall" $ do
         let makeNF name action = S.NativeFuncValue $ S.NativeFunc name action
             -- returns a S.NativeFuncValue that will return its `i`th argument
             makeProjection i = let
-                name = (D.Id $ "get" ++ (show i))
+                name = (D.Id $ "get" ++ show i)
                 in makeNF name (\args -> return $ Just $ args!!i)
 
         it "should lookup and run native function" $ do
@@ -109,16 +108,16 @@ spec = do
                 expectedValue = S.IntValue 1
                 nativeFunc = makeNF name (\_ -> return $ Just expectedValue)
 
-            (run extract $ do
+            run extract (do
                 S.overwrite name nativeFunc
                 I.evalFuncCall funcCall
-                ) >>= (`shouldBe` (Just expectedValue))
+                ) >>= (`shouldBe` Just expectedValue)
 
         it "should throw exception if cannot find function implementation" $ do
             let name = D.Id "non-existent"
                 funcCall = D.FuncCall name []
 
-            (run extract $ do
+            run extract (
                 I.evalFuncCall funcCall
                 ) `shouldThrow` anyException
 
@@ -126,7 +125,7 @@ spec = do
             let name1 = D.Id "getFirst"
                 e1 = D.StrExpr "foo"
 
-            (run extract $ do
+            run extract (do
                 S.overwrite name1 $ makeProjection 0
                 I.evalFuncCall $ D.FuncCall name1 [e1]
                 ) >>= (`shouldBe` (Just $ S.StrValue "foo"))
@@ -141,10 +140,57 @@ spec = do
                             returnType = D.TypeString,
                             block = funcBody}
 
-            (run extract $ do
+            run extract (do
                 S.overwrite funcName $ S.FuncValue f
                 I.evalFuncCall $ D.FuncCall funcName [e1]
                 ) >>= (`shouldBe` (Just $ S.StrValue "foo"))
+
+
+    describe "visitCaseElseStmt" $ do
+        let unknownVarName = D.Id "unknown"
+            thenThrow = error "expected"
+            thenPass = D.Stmts []
+            one = D.IntExpr 1
+            match1 = D.IntRange 1 1
+            match2 = D.IntRange 2 2
+
+        it "should throw if cannot evaluate case expression" $ do
+            let caseDecls = [D.CaseDecl [match1] thenPass]
+            run extract (
+                visitCaseElseStmt (D.VarExpr unknownVarName) caseDecls (D.Stmts [])
+                ) `shouldThrow` anyException
+
+        it "should throw if there are no case declarations" $
+            run extract (
+                visitCaseElseStmt one [] (D.Stmts [])
+                ) `shouldThrow` anyException
+
+        it "should throw if case expression is not an IntValue" $ do
+            let caseDecls = [D.CaseDecl [match1] thenPass]
+            run extract (
+                visitCaseElseStmt (D.FltExpr 1.0) caseDecls (D.Stmts [])
+                ) `shouldThrow` anyException
+
+        it "should visit case statement of first matching case declaration" $ do
+            let caseDecls = [D.CaseDecl [match1] thenPass,
+                             D.CaseDecl [match1] thenThrow]
+            run extract (
+                visitCaseElseStmt one caseDecls thenThrow
+                ) >>= (`shouldBe` ())
+
+        it "should not visit case statement of a subsequent matching case declaration" $ do
+            let caseDecls = [D.CaseDecl [match1] thenPass,
+                             D.CaseDecl [match1] thenThrow]
+            run extract (
+                visitCaseElseStmt one caseDecls thenThrow
+                ) >>= (`shouldBe` ())
+
+        it "should visit else statement if no cases match" $ do
+            let caseDecls = [D.CaseDecl [match2] thenThrow,
+                             D.CaseDecl [match2] thenThrow]
+            run extract (
+                visitCaseElseStmt one caseDecls thenPass
+                ) >>= (`shouldBe` ())
 
     describe "visitWhileStmt" $ do
         let dummyVarName = D.Id "dummyVar"
@@ -169,38 +215,38 @@ spec = do
                 // execute `stmts`
             end;
             -}
-            setupWhileNTimes :: Int -> [D.Stmt] -> S.AppState (D.Stmt)
+            setupWhileNTimes :: Int -> [D.Stmt] -> S.AppState D.Stmt
             setupWhileNTimes n stmts = do
                 let dummyVar = makeNamedInt n
                 S.declareVar dummyVarName dummyVar
                 return D.WhileStmt {getWhileExpr = D.BinaryExpr ">" dummyVarRef zero,
-                                    getWhileStmt = D.Stmts $ [decrementDummyVar] ++ stmts}
+                                    getWhileStmt = D.Stmts $ decrementDummyVar : stmts}
 
         it "should throw if it can't evaluate the while condition" $ do
             let whileStmt = D.WhileStmt {getWhileExpr = unknownVarRef,
                                          getWhileStmt = D.Stmts []}
-            (run extract $ do
+            run extract (
                 I.visitWhileStmt whileStmt
                 ) `shouldThrow` anyException -- cannot eval
 
         it "should throw if the while condition is of incorrect type" $ do
             let whileStmt = D.WhileStmt {getWhileExpr = D.IntExpr 1,
                                          getWhileStmt = D.Stmts []}
-            (run extract $ do
+            run extract (
                 I.visitWhileStmt whileStmt
                 ) `shouldThrow` anyException -- incorrect type
 
-        it "should correctly reference the state in the while condition" $ do
-            (run extract $ do
+        it "should correctly reference the state in the while condition" $
+            run extract (do
                 whileStmt <- setupWhileNTimes 3 []
                 I.visitWhileStmt whileStmt
                 S.find dummyVarName
                 ) >>= (`shouldBe` (Just $ makeNamedInt 0))
 
-        it "should preserve state on break" $ do
-            (run extract $ do
+        it "should preserve state on break" $ 
+            run extract (do
                 whileStmt <- setupWhileNTimes 3 [D.IfStmt (makeComparisonTo "=" 1 dummyVarRef) D.BreakStmt]
-                catchError (I.visitWhileStmt whileStmt) (\evt -> case evt of
+                catchError (I.visitWhileStmt whileStmt) (\case
                     S.Break -> return ()
                     _       -> error "expected break"
                     )
@@ -209,7 +255,7 @@ spec = do
 
         it "should skip remaining statements on continue" $ do
             let varName = D.Id "lastSeen"
-            (run extract $ do
+            run extract (do
                 S.declareVar varName (S.IntValue $ -1)
                 whileStmt <- setupWhileNTimes 3 [
                     D.IfStmt (makeComparisonTo "=" 0 dummyVarRef) D.ContinueStmt,
@@ -250,104 +296,104 @@ spec = do
             runCountLoopsUp :: Int -> Int -> [D.Stmt] -> S.AppState ()
             runCountLoopsUp = runCountLoops True
 
-        it "should throw if `start` cannot be evaluated" $ do
-            (run extract $ do
+        it "should throw if `start` cannot be evaluated" $
+            run extract (do
                 S.declareVar nameI zero
                 forTo nameI badExpr zeroExpr (Stmts [])
                 ) `shouldThrow` anyException -- cannot eval
         
-        it "should throw if `end` cannot be evaluated" $ do
-            (run extract $ do
+        it "should throw if `end` cannot be evaluated" $
+            run extract (do
                 S.declareVar nameI zero
                 forTo nameI zeroExpr badExpr (Stmts [])
                 ) `shouldThrow` anyException -- cannot eval
         
-        it "should throw if iteration var is const" $ do
-            (run extract $ do
+        it "should throw if iteration var is const" $
+            run extract (do
                 S.declareConst nameI zero
                 forTo nameI zeroExpr oneExpr (Stmts [])
                 ) `shouldThrow` anyException -- cannot assign to const
 
-        it "should throw if iteration var is undeclared" $ do
-            (run extract $ do
+        it "should throw if iteration var is undeclared" $
+            run extract (
                 forTo nameI zeroExpr oneExpr (Stmts [])
                 ) `shouldThrow` anyException -- cannot assign to const
     
-        it "should throw if iteration var is not of type IntValue" $ do
-            (run extract $ do
+        it "should throw if iteration var is not of type IntValue" $
+            run extract (do
                 S.declareVar nameI $ S.FloatValue 1.0
                 forTo nameI zeroExpr oneExpr (Stmts [])
                 ) `shouldThrow` anyException -- type mismatch
 
-        it "should throw if iteration var is not of type IntValue" $ do
-            (run extract $ do
+        it "should throw if iteration var is not of type IntValue" $
+            run extract (do
                 S.declareVar nameI $ S.FloatValue 1.0
                 forTo nameI zeroExpr oneExpr (Stmts [])
                 ) `shouldThrow` anyException -- incorrect type
 
-        it "should allow modifying variables in outer scopes" $ do
-            (run extract $ do
+        it "should allow modifying variables in outer scopes" $
+            run extract (do
                 runCountLoopsUp 1 5 []
                 S.find nameLoopCount
                 ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 5))
 
-        it "should not execute loop if lo > hi" $ do
-            (run extract $ do
+        it "should not execute loop if lo > hi" $
+            run extract (do
                 runCountLoopsUp 1 0 []
                 S.find nameLoopCount
                 ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 0))
 
-        it "should not execute `downTo` loop if begin < end" $ do
-            (run extract $ do
+        it "should not execute `downTo` loop if begin < end" $
+            run extract (do
                 runCountLoops False 0 1 []
                 S.find nameLoopCount
                 ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 0))
 
-        it "should execute `downTo` loop if begin > end" $ do
-            (run extract $ do
+        it "should execute `downTo` loop if begin > end" $
+            run extract (do
                 runCountLoops False 1 0 []
                 S.find nameLoopCount
                 ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 2))
 
-        it "should not run subsequent statements on continue" $ do
-            (run extract $ do
+        it "should not run subsequent statements on continue" $
+            run extract (do
                 runCountLoopsUp 1 5 [
                     D.IfStmt (D.BinaryExpr "=" refI oneExpr) D.ContinueStmt]
                 S.find nameLoopCount
                 ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 4))
 
-        it "should not set iteration variable on break" $ do
-            (run extract $ do
+        it "should not set iteration variable on break" $
+            run extract (do
                 runCountLoopsUp 1 5 [
                     D.IfStmt (D.BinaryExpr "=" refI oneExpr) D.BreakStmt]
                 S.find nameI
                 ) >>= (`shouldBe` (Just $ S.NamedValue nameI $ S.IntValue 1))
 
-        it "should not run subsequent statements on break" $ do
-            (run extract $ do
+        it "should not run subsequent statements on break" $
+            run extract (do
                 runCountLoopsUp 1 5 [
                     D.IfStmt (D.BinaryExpr "=" refI oneExpr) D.BreakStmt]
                 S.find nameLoopCount
                 ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 0))
 
-        it "should leave iteration variable non-const after the loop" $ do
-            (run extract $ do
+        it "should leave iteration variable non-const after the loop" $
+            run extract (do
                 runCountLoopsUp 1 5 []
                 S.isConst nameI
-                ) >>= (`shouldBe` (Just False))
+                ) >>= (`shouldBe` Just False)
 
     describe "mustEvalExpr" $ do
         let badExpr = D.VarExpr $ D.Id "doesntExist"
             goodExpr = D.IntExpr 1
             val = S.IntValue 1
 
-        it "should evaluate and return expression if its a Just" $ do
-            (run extract $ do
+        it "should evaluate and return expression if its a Just" $
+            run extract (
                 I.mustEvalExpr goodExpr
                 ) >>= (`shouldBe` val)
 
-        it "should throw error if it gets a Nothing" $ do
-            (run extract $ do
+        it "should throw error if it gets a Nothing" $
+            run extract (
                 I.mustEvalExpr badExpr
                 ) `shouldThrow` anyException
 
@@ -419,43 +465,43 @@ spec = do
                     blockStmts = []
                     }
                 }
-        it "should make arguments and return values accessible" $ do
-            (run extract $ do
+        it "should make arguments and return values accessible" $
+            run extract (do
                 -- function must be on the stack, to trigger conversion to return value
                 S.declareVar funcName $ S.FuncValue returnFirstArg
 
                 I.evalFuncValue returnFirstArg [v1, v2]
-                ) >>= (`shouldBe` (Just v1))
+                ) >>= (`shouldBe` Just v1)
 
-        it "should return Nothing if no return value" $ do
-            (run extract $ do
+        it "should return Nothing if no return value" $
+            run extract (
                 I.evalFuncValue accessFirstArgReturnNone [v1]
                 ) >>= (`shouldBe` Nothing)
 
-        it "shouldn't put return value on stack when return type is TypeNone" $ do
-            (run extract $ do
+        it "shouldn't put return value on stack when return type is TypeNone" $
+            run extract (
                 I.evalFuncValue accessReturnButReturnNone []
                 ) `shouldThrow` anyException -- illegal access
 
-        it "should set return value to default value for type" $ do
-            (run extract $ do
+        it "should set return value to default value for type" $
+            run extract (
                 I.evalFuncValue returnDefault []
                 ) >>= (`shouldBe` (Just $ S.IntValue 0))
 
-        it "should allow changes to variables from global scope" $ do
-            (run extract $ do
+        it "should allow changes to variables from global scope" $
+            run extract (do
                 S.overwrite parentScopeVarName namedValue1
                 _ <- I.evalFuncValue accessParentScope [namedValue2]
                 S.find parentScopeVarName
-                ) >>= (`shouldBe` (Just namedValue2))
+                ) >>= (`shouldBe` Just namedValue2)
 
-        it "should not allow duplicate parameter names" $ do
-            (run extract $ do
+        it "should not allow duplicate parameter names" $
+            run extract (
                 I.evalFuncValue duplicateDeclaration [namedValue1, namedValue2]
                 ) `shouldThrow` anyException -- duplicate declaration
 
         it "should leave stack unchanged after execution" $ do
-            (stack1, stack2) <- (run extract $ do
+            (stack1, stack2) <- run extract (do
                 S.declareVar funcName $ S.FuncValue returnFirstArg
                 stack1 <- get
                 _ <- I.evalFuncValue returnFirstArg [v1, v2]
@@ -464,34 +510,34 @@ spec = do
                 )
             stack2 `shouldBe` stack1
 
-    describe "xor" $ do
+    describe "xor" $
         it "should work in all possible cases" $ do
             I.xor True  True  `shouldBe` False
             I.xor True  False `shouldBe` True
             I.xor False True  `shouldBe` True
             I.xor False False `shouldBe` False
 
-    describe "rvName" $ do
-        it "should produce correct name for dummy function" $ do
-            I.rvName mockFunc `shouldBe` (D.Id ".retval$name1")
+    describe "rvName" $
+        it "should produce correct name for dummy function" $
+            I.rvName mockFunc `shouldBe` D.Id ".retval$name1"
 
     describe "cast" $ do
-        it "should work as identity on same type" $ do
-            mapM_ (\v -> I.cast (S.typeOf v) v `shouldBe` (Just v)) mockValues
+        it "should work as identity on same type" $
+            mapM_ (\v -> I.cast (S.typeOf v) v `shouldBe` Just v) mockValues
 
-        it "should lift named value before cast" $ do
-            mapM_ (\(v, nv) -> I.cast (S.typeOf v) nv `shouldBe` (Just v)) $ zip mockValues mockNamedValues
+        it "should lift named value before cast" $
+            mapM_ (\(v, nv) -> I.cast (S.typeOf v) nv `shouldBe` Just v) $ zip mockValues mockNamedValues
 
-        it "should cast int to float" $ do
-            I.cast TypeFloat (S.IntValue 2) `shouldBe` (Just $ S.FloatValue 2)
+        it "should cast int to float" $
+            I.cast TypeFloat (S.IntValue 2) `shouldBe` Just $ S.FloatValue 2
 
-        it "should refuse to cast float to int" $ do
+        it "should refuse to cast float to int" $
             I.cast TypeInt (S.FloatValue 2) `shouldBe` Nothing
 
-        it "should refuse to cast int to bool" $ do
+        it "should refuse to cast int to bool" $
             I.cast TypeBool (S.IntValue 2) `shouldBe` Nothing
 
-        it "should refuse to cast bool to int" $ do
+        it "should refuse to cast bool to int" $
             I.cast TypeInt (S.BoolValue False) `shouldBe` Nothing
 
     describe "mustCast" $ do
@@ -504,43 +550,43 @@ spec = do
             evaluate (I.mustCast TypeFunc val) `shouldThrow` anyException
 
     describe "splitAtSpace" $ do
-        it "should split at the first space on a normal string" $ do
+        it "should split at the first space on a normal string" $
             I.splitAtSpace "my string is cool" `shouldBe` ("my", "string is cool")
 
-        it "should split at the first character if that's a space" $ do
+        it "should split at the first character if that's a space" $
             I.splitAtSpace " space is first" `shouldBe` ("", "space is first")
 
-        it "should split on multiple spaces but doesn't trim" $ do
+        it "should split on multiple spaces but doesn't trim" $
             I.splitAtSpace "many  spaces" `shouldBe` ("many", " spaces")
 
-        it "should split empty string" $ do
+        it "should split empty string" $
             I.splitAtSpace "" `shouldBe` ("", "")
 
-        it "should split singleton string" $ do
+        it "should split singleton string" $
             I.splitAtSpace "a" `shouldBe` ("a", "")
 
-        it "should split singleton space" $ do
+        it "should split singleton space" $
             I.splitAtSpace " " `shouldBe` ("", "")
 
-        it "should work if there are no spaces" $ do
+        it "should work if there are no spaces" $
             I.splitAtSpace "abcdef" `shouldBe` ("abcdef", "")
 
-        it "should split if the only space is the last character" $ do
+        it "should split if the only space is the last character" $
             I.splitAtSpace "abcdef " `shouldBe` ("abcdef", "")
 
     describe "isvar" $ do
-        it "should return true if a named value" $ do
+        it "should return true if a named value" $
             I.isvar (S.NamedValue (D.Id "myfunc") $ S.FuncValue mockFunc) `shouldBe` True
 
-        it "should return false if not a named value" $ do
+        it "should return false if not a named value" $
             I.isvar (S.FuncValue mockFunc) `shouldBe` False
 
     describe "doesMatch" $ do
         it "should reject anything except NamedValue and IntValue" $ do
             let decl = makeCaseDecl [(1, 1)]
-            mapM_ (\val -> do
+            mapM_ (\val ->
                 evaluate (I.doesMatch val decl) `shouldThrow` anyException
-                ) $ filter (not . (isOfType TypeInt)) mockValues
+                ) $ filter (not . isOfType TypeInt) mockValues
 
         it "should cast NamedValue to IntValue" $ do
             let decl = makeCaseDecl [(1, 1), (10, 10)]
@@ -548,9 +594,9 @@ spec = do
 
         it "should doent cast NamedValue to anything besides IntValue" $ do
             let decl = makeCaseDecl [(1, 1)]
-            mapM_ (\val -> do
+            mapM_ (\val ->
                 evaluate (I.doesMatch val decl) `shouldThrow` anyException
-                ) $ filter (not . (isOfType TypeInt) . S.getValue) mockNamedValues
+                ) $ filter (not . isOfType TypeInt . S.getValue) mockNamedValues
 
         it "return True if IntValue matches either end point" $ do
             let decl = makeCaseDecl [(1, 2)]
@@ -572,11 +618,11 @@ spec = do
                 n1 = 1 :: Integer
                 n2 = 2 :: Integer
 
-            mapM_ (\(op, result) -> do
+            mapM_ (\(op, result) ->
                 (I.combineToNum op n1 n2, op) `shouldBe` (result, op)
                 ) $ zip ops results
 
-        it "should throw on unknown operand" $ do
+        it "should throw on unknown operand" $
             evaluate (I.combineToNum "/" (1 :: Integer) (2 :: Integer)) `shouldThrow` anyException
 
     describe "combineToBool" $ do
@@ -586,9 +632,9 @@ spec = do
                 n1 = 1 :: Integer
                 n2 = 2 :: Integer
 
-            mapM_ (\(op, result) -> do
+            mapM_ (\(op, result) ->
                 (I.combineToBool op n1 n2, op) `shouldBe` (result, op)
                 ) $ zip ops results
 
-        it "should throw on unknown operand" $ do
+        it "should throw on unknown operand" $
             evaluate (I.combineToBool "?" (1 :: Integer) (2 :: Integer)) `shouldThrow` anyException

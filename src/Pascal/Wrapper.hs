@@ -9,4 +9,4 @@ import           Pascal.Parser              (happyParser)
 ----------------------------------------------------------------------------
 
 parseString :: String -> Either String Program
-parseString s = runAlex (BLC.pack s) $ happyParser
+parseString s = runAlex (BLC.pack s) happyParser

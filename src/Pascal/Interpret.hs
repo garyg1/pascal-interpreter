@@ -60,9 +60,11 @@ visitAssignStmt name e = do
     rhs <- mustEvalExpr e
     lhs <- S.mustFind name
     case (lhs, rhs) of
-        (S.FuncValue _, S.FuncValue g) -> S.mustReplace name (S.FuncValue g)
-        (S.FuncValue f, rhs')          -> S.mustReplace (rvName f) $ mustCast (returnType f) rhs'
-        (_, rhs')                      -> S.mustReplace name $ S.NamedValue name $ mustCast (S.typeOf lhs) rhs'
+        (S.FuncValue _, S.FuncValue _)             -> S.mustReplace name rhs
+        (S.FuncValue f, _)                         -> visitAssignStmt (rvName f) e
+        (S.NativeFuncValue _, S.NativeFuncValue _) -> S.mustReplace name rhs
+        (_, _)                                     -> S.mustReplace name $ S.NamedValue name $
+                                                        mustCast (S.typeOf lhs) rhs
 
 visitCaseElseStmt :: Expr -> [CaseDecl] -> Stmt -> S.AppState ()
 visitCaseElseStmt _ [] _ = throw $ S.InternalError "Unexpected empty case statement"
@@ -304,14 +306,15 @@ rvName f = Id $ ".retval$" ++ (toString . fname $ f)
 
 cast :: PascalType -> S.Value -> Maybe S.Value
 cast type' val = case (val, type') of
-    (S.NamedValue _ val', _)     -> cast type' val'
-    (S.BoolValue _, TypeBool)    -> Just val
-    (S.IntValue _, TypeInt)      -> Just val
-    (S.IntValue val', TypeFloat) -> Just $ S.FloatValue $ fromIntegral val'
-    (S.FloatValue _, TypeFloat)  -> Just val
-    (S.StrValue _, TypeString)   -> Just val
-    (S.FuncValue _, TypeFunc)    -> Just val
-    (_, _)                       -> Nothing
+    (S.NamedValue _ val', _)              -> cast type' val'
+    (S.BoolValue _, TypeBool)             -> Just val
+    (S.IntValue _, TypeInt)               -> Just val
+    (S.IntValue val', TypeFloat)          -> Just $ S.FloatValue $ fromIntegral val'
+    (S.FloatValue _, TypeFloat)           -> Just val
+    (S.StrValue _, TypeString)            -> Just val
+    (S.FuncValue _, TypeFunc)             -> Just val
+    (S.NativeFuncValue _, TypeNativeFunc) -> Just val
+    (_, _)                                -> Nothing
 
 mustCast :: PascalType -> S.Value -> S.Value
 mustCast t v = case cast t v of

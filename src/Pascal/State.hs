@@ -60,12 +60,12 @@ instance Show Value where
     show (NativeFuncValue _) = "<native-function>"
 
 debugShow :: Value -> String
-debugShow (NamedValue n v) = "NamedValue '" ++ (toString n) ++ "'" ++ (show v)
+debugShow (NamedValue n v) = "NamedValue '" ++ toString n ++ "'" ++ show v
 debugShow other            = show other
 
 data NativeFunc = NativeFunc
     { nfName :: Id
-    , nfFunc :: ([Value] -> AppState (Maybe Value))
+    , nfFunc :: [Value] -> AppState (Maybe Value)
     }
 
 instance Show NativeFunc where
@@ -114,9 +114,8 @@ declare isConst' name value = do
         Just _  -> throw $ DuplicateDeclaration name
         Nothing -> do
             overwrite name value
-            if isConst'
-                then setConst True name
-                else return ()
+            when isConst' $
+                setConst True name
 
 declareVar :: Id -> Value -> AppState ()
 declareVar = declare False
@@ -124,7 +123,7 @@ declareVar = declare False
 declareConst :: Id -> Value -> AppState ()
 declareConst = declare True
 
-mustFind :: Id -> AppState (Value)
+mustFind :: Id -> AppState Value
 mustFind name = state $ \pstate -> case find' pstate name of
     Just x  -> (x, pstate)
     Nothing -> throw $ UnknownSymbol name
@@ -147,13 +146,13 @@ findTop' st name = case st of
     PState [] gl      -> Scope.find gl name
 
 overwrite :: Id -> Value -> AppState ()
-overwrite name value = state $ \pstate -> case pstate of
-    PState (sc : rest) gl -> ((), PState ((Scope.insert name value sc) : rest) gl)
+overwrite name value = state $ \case
+    PState (sc : rest) gl -> ((), PState (Scope.insert name value sc : rest) gl)
     PState [] gl          -> ((), PState [] (Scope.insert name value gl))
 
 setConst :: Bool -> Id -> AppState ()
-setConst isConst' name = state $ \pstate -> case pstate of
-    PState (sc : rest) gl -> ((), PState ((Scope.setConst isConst' name sc) : rest) gl)
+setConst isConst' name = state $ \case
+    PState (sc : rest) gl -> ((), PState (Scope.setConst isConst' name sc : rest) gl)
     PState [] gl          -> ((), PState [] (Scope.setConst isConst' name gl))
 
 isConst :: Id -> AppState (Maybe Bool)
@@ -183,7 +182,7 @@ mustReplace name value = state $ \pstate -> case replace' name value pstate of
 replace' :: Id -> Value -> PState -> Maybe PState
 replace' name val state' = case state' of
     PState (sc : rest) gl -> case Scope.find sc name of
-        Just _  -> let sc' = (Scope.insert name val sc) in Just $ PState (sc' : rest) gl
+        Just _  -> let sc' = Scope.insert name val sc in Just $ PState (sc' : rest) gl
         Nothing -> case replace' name val $ PState [] gl of
             Just (PState _ gl') -> Just $ PState (sc : rest) gl'
             Nothing             -> Nothing

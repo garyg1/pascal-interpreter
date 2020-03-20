@@ -80,7 +80,7 @@ newtype Id
     deriving (Eq, Ord)
 
 instance Show Id where
-    show _id = "(Id " ++ (toString _id) ++ ")"
+    show _id = "(Id " ++ toString _id ++ ")"
 
 data FuncCall = FuncCall Id [Expr]
     deriving (Show, Eq)

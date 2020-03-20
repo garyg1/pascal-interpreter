@@ -38,59 +38,39 @@ visitFuncDecl func = S.declareVar (fname func) (S.FuncValue func)
 
 visitStmt :: Stmt -> S.AppState ()
 visitStmt stmt = case stmt of
-    AssignStmt name e -> do
-        rhs <- mustEvalExpr e
-        lhs <- S.mustFind name
-        case (lhs, rhs) of
-            (S.FuncValue _, S.FuncValue g) -> S.mustReplace name (S.FuncValue g)
-            (S.FuncValue f, rhs')          -> S.mustReplace (rvName f) $ mustCast (returnType f) rhs'
-            (_, rhs')                      -> S.mustReplace name $ S.NamedValue name $ mustCast (S.typeOf lhs) rhs'
-
+    AssignStmt name e -> visitAssignStmt name e
     BreakStmt -> throwError S.Break
     ContinueStmt -> throwError S.Continue
-
-    CaseStmt case' cases -> visitStmt $ CaseElseStmt case' cases (Stmts [])
-    CaseElseStmt case' cases elseStmt -> do
-        val <- mustEvalExpr case'
-        case filter (doesMatch val) cases of
-            ((CaseDecl _ thenStmt) : _) -> visitStmt thenStmt
-            []                          -> visitStmt elseStmt
-
-    ForToStmt cvarName e1 e2 st -> visitForStmt True cvarName e1 e2 st
+    CaseStmt caseExpr cases -> visitCaseElseStmt caseExpr cases (Stmts [])
+    CaseElseStmt caseExpr cases elseStmt -> visitCaseElseStmt caseExpr cases elseStmt
     ForDownToStmt cvarName e1 e2 st -> visitForStmt False cvarName e1 e2 st
-
+    ForToStmt cvarName e1 e2 st -> visitForStmt True cvarName e1 e2 st
     FuncCallStmt call -> do
         _ <- evalFuncCall call
         return ()
-
-    IfStmt ifExpr thenStmt -> visitStmt $ IfElseStmt ifExpr thenStmt (Stmts [])
-    IfElseStmt ifExpr thenStmt elseStmt -> do
-        val <- mustEvalExpr ifExpr
-        case cast TypeBool val of
-            Just (S.BoolValue True)  -> do visitStmt thenStmt
-            Just (S.BoolValue False) -> do visitStmt elseStmt
-            _                        -> throw $ S.IncorrectType "if condition" TypeBool val
-
+    IfElseStmt i t e -> visitIfElseStmt i t e
+    IfStmt ifExpr thenStmt -> visitIfElseStmt ifExpr thenStmt (Stmts [])
     Stmts stmts -> mapM_ visitStmt stmts
-
     WhileStmt _ _ -> catchError (visitWhileStmt stmt) (\evt -> case evt of
             S.Break    -> return ()
             S.Continue -> throw $ S.InternalError "unknown error 'continue' thrown"
         )
 
-visitWhileStmt :: Stmt -> S.AppState ()
-visitWhileStmt whileStmt = do
-    let WhileStmt whileExpr doStmt = whileStmt
-    val <- mustEvalExpr whileExpr
-    case cast TypeBool val of
-        Just (S.BoolValue True) -> do
-            catchError (visitStmt doStmt) (\evt -> case evt of
-                S.Continue -> return ()
-                S.Break    -> throwError evt
-                )
-            visitWhileStmt whileStmt
-        Just (S.BoolValue False) -> return ()
-        _                        -> throw $ S.IncorrectType "while condition" TypeBool val
+visitAssignStmt :: Id -> Expr -> S.AppState ()
+visitAssignStmt name e = do
+    rhs <- mustEvalExpr e
+    lhs <- S.mustFind name
+    case (lhs, rhs) of
+        (S.FuncValue _, S.FuncValue g) -> S.mustReplace name (S.FuncValue g)
+        (S.FuncValue f, rhs')          -> S.mustReplace (rvName f) $ mustCast (returnType f) rhs'
+        (_, rhs')                      -> S.mustReplace name $ S.NamedValue name $ mustCast (S.typeOf lhs) rhs'
+
+visitCaseElseStmt :: Expr -> [CaseDecl] -> Stmt -> S.AppState ()
+visitCaseElseStmt caseExpr cases elseStmt = do
+    val <- mustEvalExpr caseExpr
+    case filter (doesMatch val) cases of
+        ((CaseDecl _ thenStmt) : _) -> visitStmt thenStmt
+        []                          -> visitStmt elseStmt
 
 visitForStmt :: Bool -> Id -> Expr -> Expr -> Stmt -> S.AppState ()
 visitForStmt isUp name start end doStmt = do
@@ -127,8 +107,30 @@ visitForStmt isUp name start end doStmt = do
             _       -> throw $ S.InternalError "unknown error thrown"
         )
 
-    -- this is fine, `name` was definitely VAR before it was loop variable
+    -- this is OK, since `name` was definitely VAR before it was loop variable
     S.setConst False name
+
+visitIfElseStmt :: Expr -> Stmt -> Stmt -> S.AppState ()
+visitIfElseStmt ifExpr thenStmt elseStmt = do
+    val <- mustEvalExpr ifExpr
+    case cast TypeBool val of
+        Just (S.BoolValue True)  -> do visitStmt thenStmt
+        Just (S.BoolValue False) -> do visitStmt elseStmt
+        _                        -> throw $ S.IncorrectType "if condition" TypeBool val
+
+visitWhileStmt :: Stmt -> S.AppState ()
+visitWhileStmt whileStmt = do
+    let WhileStmt whileExpr doStmt = whileStmt
+    val <- mustEvalExpr whileExpr
+    case cast TypeBool val of
+        Just (S.BoolValue True) -> do
+            catchError (visitStmt doStmt) (\evt -> case evt of
+                S.Continue -> return ()
+                S.Break    -> throwError evt
+                )
+            visitWhileStmt whileStmt
+        Just (S.BoolValue False) -> return ()
+        _                        -> throw $ S.IncorrectType "while condition" TypeBool val
 
 setIterationVar :: Id -> Int -> S.AppState ()
 setIterationVar name newVal = do

@@ -190,7 +190,7 @@ spec = do
                 I.visitWhileStmt whileStmt
                 ) `shouldThrow` anyException -- incorrect type
 
-        it "should correctly reference the app's state in the while condition" $ do
+        it "should correctly reference the state in the while condition" $ do
             (run extract $ do
                 whileStmt <- setupWhileNTimes 3 []
                 I.visitWhileStmt whileStmt
@@ -233,7 +233,7 @@ spec = do
             incrementLoopCount = D.AssignStmt nameLoopCount $ D.BinaryExpr "+" (D.VarExpr nameLoopCount) oneExpr
 
             {-
-            equilvalent to 
+            Equivalent to 
             var loopCount : integer = 0;
                 i : integer;
             // ...

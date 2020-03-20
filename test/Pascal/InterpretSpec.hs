@@ -162,10 +162,12 @@ spec = do
             makeComparisonTo op n lhs = D.BinaryExpr op lhs $ D.IntExpr n
 
             {-
+            Equivalent to:
             dummyVar := n;
             while dummyVar > 0 begin
                 dummyVar := dummyVar - 1;
-                // execute stmts
+                // execute `stmts`
+            end;
             -}
             setupWhileNTimes :: Int -> [D.Stmt] -> S.AppState (D.Stmt)
             setupWhileNTimes n stmts = do
@@ -174,14 +176,14 @@ spec = do
                 return D.WhileStmt {getWhileExpr = D.BinaryExpr ">" dummyVarRef zero,
                                     getWhileStmt = D.Stmts $ [decrementDummyVar] ++ stmts}
 
-        it "should should throw if it can't evaluate the while condition" $ do
+        it "should throw if it can't evaluate the while condition" $ do
             let whileStmt = D.WhileStmt {getWhileExpr = unknownVarRef,
                                          getWhileStmt = D.Stmts []}
             (run extract $ do
                 I.visitWhileStmt whileStmt
                 ) `shouldThrow` anyException -- cannot eval
 
-        it "should should throw if the while condition is of incorrect type" $ do
+        it "should throw if the while condition is of incorrect type" $ do
             let whileStmt = D.WhileStmt {getWhileExpr = D.IntExpr 1,
                                          getWhileStmt = D.Stmts []}
             (run extract $ do
@@ -218,6 +220,121 @@ spec = do
                 (Just var) <- S.find varName
                 return $ I.cast D.TypeInt var
                 ) >>= (`shouldBe` (Just $ S.IntValue 1))
+
+    describe "visitForStmt" $ do
+        let nameI = D.Id "i"
+            refI = D.VarExpr nameI
+            zero = S.IntValue 0
+            zeroExpr = D.IntExpr 0
+            oneExpr = D.IntExpr 1
+            badExpr = D.VarExpr $ D.Id "doesntExist"
+            forTo = visitForStmt True
+            nameLoopCount = D.Id "loopCount"
+            incrementLoopCount = D.AssignStmt nameLoopCount $ D.BinaryExpr "+" (D.VarExpr nameLoopCount) oneExpr
+
+            {-
+            equilvalent to 
+            var loopCount : integer = 0;
+                i : integer;
+            // ...
+            for i := `begin` (to/downTo) `end` do begin
+                // execute `stmts`
+                myIters := myIters + 1;
+            -}
+            runCountLoops :: Bool -> Int -> Int -> [D.Stmt] -> S.AppState ()
+            runCountLoops isUp begin end stmts = do
+                S.declareVar nameLoopCount $ S.NamedValue nameLoopCount zero
+                S.declareVar nameI zero
+                visitForStmt isUp nameI (D.IntExpr begin) (D.IntExpr end) (Stmts $ stmts ++ [incrementLoopCount])
+
+            runCountLoopsUp :: Int -> Int -> [D.Stmt] -> S.AppState ()
+            runCountLoopsUp = runCountLoops True
+
+        it "should throw if `start` cannot be evaluated" $ do
+            (run extract $ do
+                S.declareVar nameI zero
+                forTo nameI badExpr zeroExpr (Stmts [])
+                ) `shouldThrow` anyException -- cannot eval
+        
+        it "should throw if `end` cannot be evaluated" $ do
+            (run extract $ do
+                S.declareVar nameI zero
+                forTo nameI zeroExpr badExpr (Stmts [])
+                ) `shouldThrow` anyException -- cannot eval
+        
+        it "should throw if iteration var is const" $ do
+            (run extract $ do
+                S.declareConst nameI zero
+                forTo nameI zeroExpr oneExpr (Stmts [])
+                ) `shouldThrow` anyException -- cannot assign to const
+
+        it "should throw if iteration var is undeclared" $ do
+            (run extract $ do
+                forTo nameI zeroExpr oneExpr (Stmts [])
+                ) `shouldThrow` anyException -- cannot assign to const
+    
+        it "should throw if iteration var is not of type IntValue" $ do
+            (run extract $ do
+                S.declareVar nameI $ S.FloatValue 1.0
+                forTo nameI zeroExpr oneExpr (Stmts [])
+                ) `shouldThrow` anyException -- type mismatch
+
+        it "should throw if iteration var is not of type IntValue" $ do
+            (run extract $ do
+                S.declareVar nameI $ S.FloatValue 1.0
+                forTo nameI zeroExpr oneExpr (Stmts [])
+                ) `shouldThrow` anyException -- incorrect type
+
+        it "should allow modifying variables in outer scopes" $ do
+            (run extract $ do
+                runCountLoopsUp 1 5 []
+                S.find nameLoopCount
+                ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 5))
+
+        it "should not execute loop if lo > hi" $ do
+            (run extract $ do
+                runCountLoopsUp 1 0 []
+                S.find nameLoopCount
+                ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 0))
+
+        it "should not execute `downTo` loop if begin < end" $ do
+            (run extract $ do
+                runCountLoops False 0 1 []
+                S.find nameLoopCount
+                ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 0))
+
+        it "should execute `downTo` loop if begin > end" $ do
+            (run extract $ do
+                runCountLoops False 1 0 []
+                S.find nameLoopCount
+                ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 2))
+
+        it "should not run subsequent statements on continue" $ do
+            (run extract $ do
+                runCountLoopsUp 1 5 [
+                    D.IfStmt (D.BinaryExpr "=" refI oneExpr) D.ContinueStmt]
+                S.find nameLoopCount
+                ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 4))
+
+        it "should not set iteration variable on break" $ do
+            (run extract $ do
+                runCountLoopsUp 1 5 [
+                    D.IfStmt (D.BinaryExpr "=" refI oneExpr) D.BreakStmt]
+                S.find nameI
+                ) >>= (`shouldBe` (Just $ S.NamedValue nameI $ S.IntValue 1))
+
+        it "should not run subsequent statements on break" $ do
+            (run extract $ do
+                runCountLoopsUp 1 5 [
+                    D.IfStmt (D.BinaryExpr "=" refI oneExpr) D.BreakStmt]
+                S.find nameLoopCount
+                ) >>= (`shouldBe` (Just $ S.NamedValue nameLoopCount $ S.IntValue 0))
+
+        it "should leave iteration variable non-const after the loop" $ do
+            (run extract $ do
+                runCountLoopsUp 1 5 []
+                S.isConst nameI
+                ) >>= (`shouldBe` (Just False))
 
     describe "mustEvalExpr" $ do
         let badExpr = D.VarExpr $ D.Id "doesntExist"
@@ -315,7 +432,7 @@ spec = do
                 I.evalFuncValue accessFirstArgReturnNone [v1]
                 ) >>= (`shouldBe` Nothing)
 
-        it "shouldn't put return value on stack return type is TypeNone" $ do
+        it "shouldn't put return value on stack when return type is TypeNone" $ do
             (run extract $ do
                 I.evalFuncValue accessReturnButReturnNone []
                 ) `shouldThrow` anyException -- illegal access

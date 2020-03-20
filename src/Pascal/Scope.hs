@@ -32,6 +32,11 @@ insert name val (Scope vs consts) = case Set.member name consts of
     True  -> throw $ CannotAssignToConst name
 
 setConst :: Bool -> Id -> Scope a -> Scope a
-setConst isConst name (Scope vs consts) = case isConst of
+setConst isConst' name (Scope vs consts) = case isConst' of
     True  -> Scope vs (Set.insert name consts)
     False -> Scope vs (Set.delete name consts)
+
+isConst :: Id -> Scope a -> Maybe Bool
+isConst name (Scope vs consts) = case Map.lookup name vs of
+    Just _  -> Just $ Set.member name consts
+    Nothing -> Nothing

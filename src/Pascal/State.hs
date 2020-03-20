@@ -16,7 +16,9 @@ data InterpreterError = UnknownSymbol Id
     | IncorrectArgs Id [Value] [VarDecl]
     | NotImplemented
     | DuplicateDeclaration Id
+    | CannotBeConst Id
     | VariableExpected String
+    | UndeclaredSymbol Id
     | InternalError String
     | CannotCast PascalType Value
     | CannotCombine String String
@@ -59,7 +61,7 @@ instance Show Value where
 
 debugShow :: Value -> String
 debugShow (NamedValue n v) = "NamedValue '" ++ (toString n) ++ "'" ++ (show v)
-debugShow other = show other
+debugShow other            = show other
 
 data NativeFunc = NativeFunc
     { nfName :: Id
@@ -94,7 +96,7 @@ data PState = PState
     }
     deriving (Show, Eq)
 
-{- we use exceptions for "continue" and "break", 
+{- we use exceptions for "continue" and "break",
 so State must be returned EVEN IF there's an Monad.Except event -}
 type AppState = ExceptT Events (StateT PState IO)
 type AppReturn a = (Either Events a, PState)
@@ -106,13 +108,13 @@ new :: PState
 new = PState [] Scope.empty
 
 declare :: Bool -> Id -> Value -> AppState ()
-declare isConst name value = do
+declare isConst' name value = do
     st <- get
     case findTop' st name of
         Just _  -> throw $ DuplicateDeclaration name
         Nothing -> do
             overwrite name value
-            if isConst
+            if isConst'
                 then setConst True name
                 else return ()
 
@@ -150,9 +152,19 @@ overwrite name value = state $ \pstate -> case pstate of
     PState [] gl          -> ((), PState [] (Scope.insert name value gl))
 
 setConst :: Bool -> Id -> AppState ()
-setConst isConst name = state $ \pstate -> case pstate of
-    PState (sc : rest) gl -> ((), PState ((Scope.setConst isConst name sc) : rest) gl)
-    PState [] gl          -> ((), PState [] (Scope.setConst isConst name gl))
+setConst isConst' name = state $ \pstate -> case pstate of
+    PState (sc : rest) gl -> ((), PState ((Scope.setConst isConst' name sc) : rest) gl)
+    PState [] gl          -> ((), PState [] (Scope.setConst isConst' name gl))
+
+isConst :: Id -> AppState (Maybe Bool)
+isConst name = do
+    st <- get
+    return $ case st of
+        PState [] gl       -> Scope.isConst name gl
+        PState (sc : _) gl -> case Scope.isConst name sc of
+            Just v  -> Just v
+            Nothing -> Scope.isConst name gl
+
 
 push :: Scope.Scope Value -> AppState ()
 push scope = state $ \(PState scopes gl) -> ((), PState (scope : scopes) gl)

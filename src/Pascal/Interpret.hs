@@ -3,7 +3,7 @@ module Pascal.Interpret where
 import           Control.Exception
 import           Control.Monad.Except
 import           Pascal.Data
-import           Pascal.State         as S
+import qualified Pascal.State         as S
 
 interpret :: Program -> S.AppState ()
 interpret (Program _ bl) = do
@@ -42,9 +42,9 @@ visitStmt stmt = case stmt of
         rhs <- mustEvalExpr e
         lhs <- S.mustFind name
         case (lhs, rhs) of
-            (FuncValue _, FuncValue g) -> S.mustReplace name (FuncValue g)
-            (FuncValue f, rhs')        -> S.mustReplace (rvName f) $ mustCast (returnType f) rhs'
-            (_, rhs')                  -> S.mustReplace name $ S.NamedValue name $ mustCast (S.typeOf lhs) rhs'
+            (S.FuncValue _, S.FuncValue g) -> S.mustReplace name (S.FuncValue g)
+            (S.FuncValue f, rhs')          -> S.mustReplace (rvName f) $ mustCast (returnType f) rhs'
+            (_, rhs')                      -> S.mustReplace name $ S.NamedValue name $ mustCast (S.typeOf lhs) rhs'
 
     BreakStmt -> throwError S.Break
     ContinueStmt -> throwError S.Continue
@@ -99,20 +99,20 @@ visitForStmt isUp name start end doStmt = do
     let startVal' = S.getInt startVal
         endVal' = S.getInt endVal
 
-        setIterationVar :: Int -> S.AppState ()
-        setIterationVar newVal = do
-            S.setConst False name
-            S.mustReplace name $ S.NamedValue name $ S.IntValue newVal
-            S.setConst True name
+    iterationVal <- S.mustFind name
+    case S.typeOf iterationVal of
+        TypeInt -> return ()
+        _       -> throw $ S.IncorrectType "for iteration" TypeInt iterationVal
 
-    -- assert
-    _ <- S.mustFind name
-
-    -- TODO assert that `name` is not CONST
+    isConst <- S.isConst name
+    case isConst of
+        Nothing   -> throw $ S.UndeclaredSymbol name
+        Just True -> throw $ S.CannotBeConst name
+        _         -> return ()
 
     catchError (do
         mapM_ (\newval -> do
-            setIterationVar newval
+            setIterationVar name newval
             catchError (visitStmt doStmt) (\evt -> case evt of
                 S.Continue -> return ()
                 S.Break    -> throwError evt
@@ -121,14 +121,20 @@ visitForStmt isUp name start end doStmt = do
                 then [startVal' .. endVal']
                 else reverse [endVal' .. startVal']
 
-        setIterationVar endVal'        
+        setIterationVar name endVal'
         ) (\evt -> case evt of
             S.Break -> return ()
             _       -> throw $ S.InternalError "unknown error thrown"
         )
 
     -- this is fine, `name` was definitely VAR before it was loop variable
-    S.setConst False name 
+    S.setConst False name
+
+setIterationVar :: Id -> Int -> S.AppState ()
+setIterationVar name newVal = do
+    S.setConst False name
+    S.mustReplace name $ S.NamedValue name $ S.IntValue newVal
+    S.setConst True name
 
 mustEvalExpr :: Expr -> S.AppState (S.Value)
 mustEvalExpr e = do
@@ -161,9 +167,9 @@ evalFuncCall (FuncCall name exprs) = do
     defn <- S.mustFind name
     args <- mapM mustEvalExpr exprs
     case defn of
-        S.NativeFuncValue (NativeFunc _ fn) -> fn args
-        S.FuncValue func                    -> evalFuncValue func args
-        _                                   -> throw S.NotImplemented
+        S.NativeFuncValue (S.NativeFunc _ fn) -> fn args
+        S.FuncValue func                      -> evalFuncValue func args
+        _                                     -> throw S.NotImplemented
 
 evalFuncValue :: Func -> [S.Value] -> S.AppState (Maybe S.Value)
 evalFuncValue func args = do
@@ -171,7 +177,7 @@ evalFuncValue func args = do
     S.pushEmpty
     mapM_ (\(a, p) -> S.declareVar (dname p) a) $ zip args (params func)
     if (returnType func) /= TypeNone
-        then S.overwrite returnName (valueOf $ returnType func)
+        then S.overwrite returnName (S.valueOf $ returnType func)
         else return ()
     visitBlock (block func)
     rv <- S.find returnName
@@ -185,8 +191,8 @@ declareNativeFunctions = do
     S.declareVar (Id "cos") $ nativeFuncFrom (Id "cos") cos
     S.declareVar (Id "exp") $ nativeFuncFrom (Id "exp") exp
     S.declareVar (Id "ln") $ nativeFuncFrom (Id "ln") log
-    S.declareVar (Id "writeln") $ NativeFuncValue $ NativeFunc (Id "writeln") writeln
-    S.declareVar (Id "readln") $ NativeFuncValue $ NativeFunc (Id "readln") readln
+    S.declareVar (Id "writeln") $ S.NativeFuncValue $ S.NativeFunc (Id "writeln") writeln
+    S.declareVar (Id "readln") $ S.NativeFuncValue $ S.NativeFunc (Id "readln") readln
 
 readln :: [S.Value] -> S.AppState (Maybe S.Value)
 readln args = do
@@ -204,7 +210,7 @@ readln args = do
                 S.overwrite name $ S.NamedValue name $ case type' of
                     TypeInt   -> S.IntValue $ read word
                     TypeFloat -> S.FloatValue $ read word
-                    otherType -> throw $ CannotRead otherType
+                    otherType -> throw $ S.CannotRead otherType
                 return (rest, False)
         ) ("", True) args
     return Nothing
@@ -327,4 +333,4 @@ isvar _                  = False
 doesMatch :: S.Value -> CaseDecl -> Bool
 doesMatch (S.NamedValue _ v) range = doesMatch v range
 doesMatch (S.IntValue i) (CaseDecl ranges _) = any (\(IntRange lo hi) -> (lo <= i) && (i <= hi)) ranges
-doesMatch val _ = throw $ IncorrectType "case expression" TypeInt val
+doesMatch val _ = throw $ S.IncorrectType "case expression" TypeInt val

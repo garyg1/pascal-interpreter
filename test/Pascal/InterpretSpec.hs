@@ -1,16 +1,17 @@
 module Pascal.InterpretSpec (spec) where
 
 import           Control.Exception
-import           Control.Monad.State (get)
-import           Pascal.Data         as D
-import           Pascal.Interpret    as I
-import           Pascal.State        as S
+import           Control.Monad.Except
+import           Control.Monad.State  (get)
+import           Pascal.Data          as D
+import           Pascal.Interpret     as I
+import           Pascal.State         as S
 import           Test.Hspec
 
 extract :: S.AppReturn a -> a
 extract st = case st of
-    Right (a, _) -> a
-    Left ev      -> throw ev
+    (Right val, _) -> val
+    (Left ev, _)   -> throw ev
 
 run :: (S.AppReturn a -> b) -> S.AppState a -> IO b
 run extractor fn = do
@@ -97,7 +98,7 @@ spec = do
 
     describe "evalFuncCall" $ do
         let makeNF name action = S.NativeFuncValue $ S.NativeFunc name action
-            -- returns S.NativeFuncValue will project onto its `i`th argument
+            -- returns a S.NativeFuncValue that will return its `i`th argument
             makeProjection i = let
                 name = (D.Id $ "get" ++ (show i))
                 in makeNF name (\args -> return $ Just $ args!!i)
@@ -144,6 +145,94 @@ spec = do
                 S.overwrite funcName $ S.FuncValue f
                 I.evalFuncCall $ D.FuncCall funcName [e1]
                 ) >>= (`shouldBe` (Just $ S.StrValue "foo"))
+
+    describe "visitWhileStmt" $ do
+        let dummyVarName = D.Id "dummyVar"
+            dummyVarRef = D.VarExpr dummyVarName
+            unknownVarName = D.Id "unknown"
+            unknownVarRef = D.VarExpr unknownVarName
+            zero = D.IntExpr 0
+            one = D.IntExpr 1
+            decrementDummyVar = D.AssignStmt dummyVarName $ D.BinaryExpr "-" dummyVarRef one
+
+            makeNamedInt :: Int -> S.Value
+            makeNamedInt n = S.NamedValue dummyVarName $ S.IntValue n
+
+            makeComparisonTo :: String -> Int -> D.Expr -> D.Expr
+            makeComparisonTo op n lhs = D.BinaryExpr op lhs $ D.IntExpr n
+
+            {-
+            dummyVar := n;
+            while dummyVar > 0 begin
+                dummyVar := dummyVar - 1;
+                // execute stmts
+            -}
+            setupWhileNTimes :: Int -> [D.Stmt] -> S.AppState (D.Stmt)
+            setupWhileNTimes n stmts = do
+                let dummyVar = makeNamedInt n
+                S.declareVar dummyVarName dummyVar
+                return D.WhileStmt {getWhileExpr = D.BinaryExpr ">" dummyVarRef zero,
+                                    getWhileStmt = D.Stmts $ [decrementDummyVar] ++ stmts}
+
+        it "should should throw if it can't evaluate the while condition" $ do
+            let whileStmt = D.WhileStmt {getWhileExpr = unknownVarRef,
+                                         getWhileStmt = D.Stmts []}
+            (run extract $ do
+                I.visitWhileStmt whileStmt
+                ) `shouldThrow` anyException -- cannot eval
+
+        it "should should throw if the while condition is of incorrect type" $ do
+            let whileStmt = D.WhileStmt {getWhileExpr = D.IntExpr 1,
+                                         getWhileStmt = D.Stmts []}
+            (run extract $ do
+                I.visitWhileStmt whileStmt
+                ) `shouldThrow` anyException -- incorrect type
+
+        it "should correctly reference the app's state in the while condition" $ do
+            (run extract $ do
+                whileStmt <- setupWhileNTimes 3 []
+                I.visitWhileStmt whileStmt
+                S.find dummyVarName
+                ) >>= (`shouldBe` (Just $ makeNamedInt 0))
+
+        it "should preserve state on break" $ do
+            (run extract $ do
+                whileStmt <- setupWhileNTimes 3 [D.IfStmt (makeComparisonTo "=" 1 dummyVarRef) D.BreakStmt]
+                catchError (I.visitWhileStmt whileStmt) (\evt -> case evt of
+                    S.Break -> return ()
+                    _       -> error "expected break"
+                    )
+                S.find dummyVarName
+                ) >>= (`shouldBe` (Just $ makeNamedInt 1))
+
+        it "should skip remaining statements on continue" $ do
+            let varName = D.Id "lastSeen"
+            (run extract $ do
+                S.declareVar varName (S.IntValue $ -1)
+                whileStmt <- setupWhileNTimes 3 [
+                    D.IfStmt (makeComparisonTo "=" 0 dummyVarRef) D.ContinueStmt,
+                    D.AssignStmt varName dummyVarRef
+                    ]
+                
+                I.visitWhileStmt whileStmt
+                (Just var) <- S.find varName
+                return $ I.cast D.TypeInt var
+                ) >>= (`shouldBe` (Just $ S.IntValue 1))
+
+    describe "mustEvalExpr" $ do
+        let badExpr = D.VarExpr $ D.Id "doesntExist"
+            goodExpr = D.IntExpr 1
+            val = S.IntValue 1
+
+        it "should evaluate and return expression if its a Just" $ do
+            (run extract $ do
+                I.mustEvalExpr goodExpr
+                ) >>= (`shouldBe` val)
+
+        it "should throw error if it gets a Nothing" $ do
+            (run extract $ do
+                I.mustEvalExpr badExpr
+                ) `shouldThrow` anyException
 
     describe "evalFuncValue" $ do
         let funcName = D.Id "getFirst"
@@ -256,7 +345,7 @@ spec = do
                 stack2 <- get
                 return (stack1, stack2)
                 )
-            stack1 `shouldBe` stack2
+            stack2 `shouldBe` stack1
 
     describe "xor" $ do
         it "should work in all possible cases" $ do

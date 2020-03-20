@@ -51,7 +51,10 @@ data Stmt = AssignStmt Id Expr
     | IfElseStmt Expr Stmt Stmt
     | IfStmt Expr Stmt
     | Stmts [Stmt]
-    | WhileStmt Expr Stmt
+    | WhileStmt
+    { getWhileExpr :: Expr
+    , getWhileStmt :: Stmt
+    }
     deriving (Show, Eq)
 
 data CaseDecl = CaseDecl [IntRange] Stmt
@@ -77,7 +80,7 @@ newtype Id
     deriving (Eq, Ord)
 
 instance Show Id where
-    show _id = "'Id: " ++ (toString _id) ++ "'"
+    show _id = "(Id " ++ (toString _id) ++ ")"
 
 data FuncCall = FuncCall Id [Expr]
     deriving (Show, Eq)

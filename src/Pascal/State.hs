@@ -57,6 +57,9 @@ instance Show Value where
     show (FuncValue _)       = "<function>"
     show (NativeFuncValue _) = "<native-function>"
 
+debugShow :: Value -> String
+debugShow (NamedValue n v) = "NamedValue '" ++ (toString n) ++ "'" ++ (show v)
+debugShow other = show other
 
 data NativeFunc = NativeFunc
     { nfName :: Id
@@ -91,11 +94,13 @@ data PState = PState
     }
     deriving (Show, Eq)
 
-type AppState = StateT PState (ExceptT Events IO)
-type AppReturn a = Either Events (a, PState)
+{- we use exceptions for "continue" and "break", 
+so State must be returned EVEN IF there's an Monad.Except event -}
+type AppState = ExceptT Events (StateT PState IO)
+type AppReturn a = (Either Events a, PState)
 
 runApp :: AppState a -> IO (AppReturn a)
-runApp f = runExceptT (runStateT f new)
+runApp f = runStateT (runExceptT f) new
 
 new :: PState
 new = PState [] Scope.empty

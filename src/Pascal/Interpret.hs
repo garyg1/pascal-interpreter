@@ -99,12 +99,20 @@ visitForStmt isUp name start end doStmt = do
     let startVal' = S.getInt startVal
         endVal' = S.getInt endVal
 
+        setIterationVar :: Int -> S.AppState ()
+        setIterationVar newVal = do
+            S.setConst False name
+            S.mustReplace name $ S.NamedValue name $ S.IntValue newVal
+            S.setConst True name
+
     -- assert
     _ <- S.mustFind name
 
+    -- TODO assert that `name` is not CONST
+
     catchError (do
         mapM_ (\newval -> do
-            S.mustReplace name $ S.NamedValue name $ S.IntValue newval
+            setIterationVar newval
             catchError (visitStmt doStmt) (\evt -> case evt of
                 S.Continue -> return ()
                 S.Break    -> throwError evt
@@ -113,13 +121,14 @@ visitForStmt isUp name start end doStmt = do
                 then [startVal' .. endVal']
                 else reverse [endVal' .. startVal']
 
-        S.mustReplace name $ S.NamedValue name $ S.IntValue endVal'
+        setIterationVar endVal'        
         ) (\evt -> case evt of
             S.Break -> return ()
             _       -> throw $ S.InternalError "unknown error thrown"
         )
 
-    S.setConst False name -- `name` couldn't have been const before this
+    -- this is fine, `name` was definitely VAR before it was loop variable
+    S.setConst False name 
 
 mustEvalExpr :: Expr -> S.AppState (S.Value)
 mustEvalExpr e = do
@@ -171,13 +180,13 @@ evalFuncValue func args = do
 
 declareNativeFunctions :: S.AppState ()
 declareNativeFunctions = do
-    S.overwrite (Id "sqrt") $ nativeFuncFrom (Id "sqrt") sqrt
-    S.overwrite (Id "sin") $ nativeFuncFrom (Id "sin") sin
-    S.overwrite (Id "cos") $ nativeFuncFrom (Id "cos") cos
-    S.overwrite (Id "exp") $ nativeFuncFrom (Id "exp") exp
-    S.overwrite (Id "ln") $ nativeFuncFrom (Id "ln") log
-    S.overwrite (Id "writeln") $ NativeFuncValue $ NativeFunc (Id "writeln") writeln
-    S.overwrite (Id "readln") $ NativeFuncValue $ NativeFunc (Id "readln") readln
+    S.declareVar (Id "sqrt") $ nativeFuncFrom (Id "sqrt") sqrt
+    S.declareVar (Id "sin") $ nativeFuncFrom (Id "sin") sin
+    S.declareVar (Id "cos") $ nativeFuncFrom (Id "cos") cos
+    S.declareVar (Id "exp") $ nativeFuncFrom (Id "exp") exp
+    S.declareVar (Id "ln") $ nativeFuncFrom (Id "ln") log
+    S.declareVar (Id "writeln") $ NativeFuncValue $ NativeFunc (Id "writeln") writeln
+    S.declareVar (Id "readln") $ NativeFuncValue $ NativeFunc (Id "readln") readln
 
 readln :: [S.Value] -> S.AppState (Maybe S.Value)
 readln args = do

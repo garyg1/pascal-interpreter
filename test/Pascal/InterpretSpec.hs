@@ -62,7 +62,61 @@ spec = do
                 I.declareNativeFunctions
                 mapM S.find ids
 
-            mapM_ (uncurry shouldBe) $ zip (map (S.nfName . S.getNativeFunc) vals) ids
+            mapM_ (uncurry shouldBe) $ zip ids $ map (S.nfName . S.getNativeFunc) vals
+
+    describe "visitVarDecl" $ do
+        it "should put default value on stack for Decl" $
+            run extract (do
+                I.visitVarDecl False $ D.Decl (D.Id "foo") D.TypeBool
+                S.mustFind (D.Id "foo")
+                ) >>= (`shouldBe` S.NamedValue (D.Id "foo") (S.BoolValue False))
+
+        it "should put expr result on stack for DeclDefn" $
+            run extract (do
+                I.visitVarDecl False $ D.DeclDefn (D.Id "foo") (D.BoolExpr True)
+                S.mustFind (D.Id "foo")
+                ) >>= (`shouldBe` S.NamedValue (D.Id "foo") (S.BoolValue True))
+
+        it "should throw if cannot cast expr to type of declaration" $
+            run extract (do
+                I.visitVarDecl False $ D.DeclTypeDefn (D.Id "foo") D.TypeInt (D.BoolExpr True)
+
+                -- force evaluation of the value contained in `foo`
+                S.NamedValue _ v <- S.mustFind (D.Id "foo")
+                v `seq` return ()
+                ) `shouldThrow` anyException -- cannot cast
+
+        it "should cast to declared type and assign if allowed" $
+            run extract (do
+                I.visitVarDecl False $ D.DeclTypeDefn (D.Id "foo") D.TypeFloat (D.IntExpr 1)
+                S.mustFind (D.Id "foo")
+                ) >>= (pure . S.getValue)
+                  >>= (`shouldBe` S.FloatValue 1.0)
+
+        it "should set const-ness of variable in state" $
+            run extract (do
+                I.visitVarDecl True $ D.Decl (D.Id "foo") D.TypeBool
+                S.isConst (D.Id "foo")
+                ) >>= (`shouldBe` Just True)
+
+    describe "visitStmt" $ do
+        it "should throw an Event on BreakStmt" $
+            run extract (catchError (I.visitStmt D.BreakStmt) \case
+                S.Break -> return ()
+                _       -> error "expected break"
+                ) >>= (`shouldBe` ())
+
+        it "should throw an Event on ContinueStmt" $
+            run extract (catchError (I.visitStmt D.ContinueStmt) \case
+                S.Continue -> return ()
+                _          -> error "expected continue"
+                ) >>= (`shouldBe` ())
+
+        it "should catch Break events on WhileStmt" $
+            run extract (
+                I.visitStmt $ D.WhileStmt (D.BoolExpr True) D.BreakStmt
+                ) >>= (`shouldBe` ())
+
 
     describe "evalExpr" $ do
         it "should cast literals to their corresponding values" $ do
@@ -352,9 +406,9 @@ spec = do
                     ]
 
                 I.visitWhileStmt whileStmt
-                (Just var) <- S.find varName
-                return $ I.cast D.TypeInt var
-                ) >>= (`shouldBe` (Just $ S.IntValue 1))
+                S.find varName
+                ) >>= (pure . I.mustCast D.TypeInt . fromJust)
+                  >>= (`shouldBe` S.IntValue 1)
 
     describe "visitForStmt" $ do
         let nameI = D.Id "i"
@@ -380,7 +434,7 @@ spec = do
             runCountLoops isUp begin end stmts = do
                 S.declareVar nameLoopCount $ S.NamedValue nameLoopCount zero
                 S.declareVar nameI zero
-                I.visitForStmt isUp nameI (D.IntExpr begin) (D.IntExpr end) 
+                I.visitForStmt isUp nameI (D.IntExpr begin) (D.IntExpr end)
                     (D.Stmts $ stmts ++ [incrementLoopCount])
 
             runCountLoopsUp :: Int -> Int -> [D.Stmt] -> S.AppState ()

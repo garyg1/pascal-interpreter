@@ -2,6 +2,7 @@ module Pascal.Interpret where
 
 import           Control.Exception
 import           Control.Monad.Except
+import           Data.Functor
 import           Pascal.Data
 import qualified Pascal.State         as S
 
@@ -22,36 +23,31 @@ visitDecl decl = case decl of
     FuncDecl func  -> visitFuncDecl func
 
 visitVarDecl :: Bool -> VarDecl -> S.AppState ()
-visitVarDecl isConst decl = do
-    let name = dname decl
-    val <- case decl of
-        Decl _ type'               -> return $ S.valueOf type'
-        DeclDefn _ expr'           -> mustEvalExpr expr'
-        DeclTypeDefn _ type' expr' -> mustEvalExpr expr' >>= (pure . mustCast type')
-    S.declare isConst name $ S.NamedValue name val
+visitVarDecl isConst decl = (case decl of
+    Decl _ type'               -> return $ S.valueOf type'
+    DeclDefn _ expr'           -> mustEvalExpr expr'
+    DeclTypeDefn _ type' expr' -> mustEvalExpr expr' >>= (pure . mustCast type')
+    ) >>= S.declare isConst (dname decl) . S.NamedValue (dname decl)
 
 visitFuncDecl :: Func -> S.AppState ()
 visitFuncDecl func = S.declareVar (fname func) (S.FuncValue func)
 
 visitStmt :: Stmt -> S.AppState ()
 visitStmt stmt = case stmt of
-    AssignStmt name e -> visitAssignStmt name e
-    BreakStmt -> throwError S.Break
-    ContinueStmt -> throwError S.Continue
-    CaseStmt caseExpr cases -> visitCaseElseStmt caseExpr cases (Stmts [])
+    AssignStmt name e                    -> visitAssignStmt name e
+    BreakStmt                            -> throwError S.Break
+    ContinueStmt                         -> throwError S.Continue
     CaseElseStmt caseExpr cases elseStmt -> visitCaseElseStmt caseExpr cases elseStmt
-    ForDownToStmt cvarName e1 e2 st -> visitForStmt False cvarName e1 e2 st
-    ForToStmt cvarName e1 e2 st -> visitForStmt True cvarName e1 e2 st
-    FuncCallStmt call -> do
-        _ <- evalFuncCall call
-        return ()
-    IfElseStmt i t e -> visitIfElseStmt i t e
-    IfStmt ifExpr thenStmt -> visitIfElseStmt ifExpr thenStmt (Stmts [])
-    Stmts stmts -> mapM_ visitStmt stmts
-    WhileStmt _ _ -> catchError (visitWhileStmt stmt) (\case
-            S.Break    -> return ()
-            S.Continue -> throw $ S.InternalError "unknown error 'continue' thrown"
-        )
+    CaseStmt caseExpr cases              -> visitCaseElseStmt caseExpr cases (Stmts [])
+    ForDownToStmt cvarName e1 e2 st      -> visitForStmt False cvarName e1 e2 st
+    ForToStmt cvarName e1 e2 st          -> visitForStmt True cvarName e1 e2 st
+    FuncCallStmt call                    -> evalFuncCall call $> ()
+    IfElseStmt ifExpr thenStmt elseStmt  -> visitIfElseStmt ifExpr thenStmt elseStmt
+    IfStmt ifExpr thenStmt               -> visitIfElseStmt ifExpr thenStmt (Stmts [])
+    Stmts stmts                          -> mapM_ visitStmt stmts
+    WhileStmt _ _                        -> catchError (visitWhileStmt stmt) \case
+                                                S.Break -> return ()
+                                                _       -> throw $ S.InternalError "unknown event thrown"
 
 visitAssignStmt :: Id -> Expr -> S.AppState ()
 visitAssignStmt name e = do
@@ -93,10 +89,9 @@ visitForStmt isUp name start end doStmt = do
     catchError (do
         mapM_ (\newval -> do
             setIterationVar name newval
-            catchError (visitStmt doStmt) (\evt -> case evt of
+            catchError (visitStmt doStmt) \case
                 S.Continue -> return ()
-                S.Break    -> throwError evt
-                )
+                S.Break    -> throwError S.Break
             ) $ if isUp
                 then [startVal' .. endVal']
                 else reverse [endVal' .. startVal']
@@ -124,10 +119,9 @@ visitWhileStmt whileStmt = do
     val <- mustEvalExpr whileExpr
     case cast TypeBool val of
         Just (S.BoolValue True) -> do
-            catchError (visitStmt doStmt) (\evt -> case evt of
+            catchError (visitStmt doStmt) \case
                 S.Continue -> return ()
-                S.Break    -> throwError evt
-                )
+                S.Break    -> throwError S.Break
             visitWhileStmt whileStmt
         Just (S.BoolValue False) -> return ()
         _                        -> throw $ S.IncorrectType "while condition" TypeBool val

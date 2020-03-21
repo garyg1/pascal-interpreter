@@ -35,7 +35,7 @@ executable RunPascal
   build-tools:         happy, alex
   default-language:    Haskell2010
   ghc-options:         -Wall
-  default-extensions: LambdaCase
+  default-extensions: LambdaCase, BlockArguments
                       
 
 
@@ -59,4 +59,4 @@ Test-Suite Unit
     build-tool-depends:   hspec-discover:hspec-discover == 2.*
     default-language:     Haskell2010
     ghc-options:          -Wall -fno-warn-missing-home-modules
-    default-extensions: LambdaCase
+    default-extensions: LambdaCase, BlockArguments, BangPatterns

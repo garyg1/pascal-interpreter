@@ -1,9 +1,11 @@
 module Pascal.State where
 
+import           Control.DeepSeq      (NFData)
 import           Control.Exception
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Char            (toLower)
+import           GHC.Generics         (Generic)
 import           Pascal.Data
 import qualified Pascal.Scope         as Scope
 
@@ -24,12 +26,12 @@ data InterpreterError = UnknownSymbol Id
     | CannotCombine String String
     | CannotEval Expr
     | CannotRead PascalType
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 instance Exception InterpreterError
 
 data Events = Continue
     | Break
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 instance Exception Events
 
 data Value = IntValue
@@ -48,7 +50,7 @@ data Value = IntValue
     | NativeFuncValue
     { getNativeFunc :: NativeFunc
     }
-    deriving (Eq)
+    deriving (Eq, NFData, Generic)
 
 instance Show Value where
     show (IntValue i)        = show i
@@ -67,6 +69,7 @@ data NativeFunc = NativeFunc
     { nfName :: Id
     , nfFunc :: [Value] -> AppState (Maybe Value)
     }
+    deriving (NFData, Generic)
 
 instance Show NativeFunc where
     show _ = "<Native Function>"
@@ -94,7 +97,7 @@ data PState = PState
     { stack  :: [Scope.Scope Value]
     , global :: Scope.Scope Value
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 {- we use exceptions for "continue" and "break",
 so State must be returned EVEN IF there's an Monad.Except event -}
@@ -110,7 +113,7 @@ new = PState [] Scope.empty
 declare :: Bool -> Id -> Value -> AppState ()
 declare isConst' name value = do
     st <- get
-    case findTop' st name of
+    case findTop' name st of
         Just _  -> throw $ DuplicateDeclaration name
         Nothing -> do
             overwrite name value
@@ -124,36 +127,35 @@ declareConst :: Id -> Value -> AppState ()
 declareConst = declare True
 
 mustFind :: Id -> AppState Value
-mustFind name = state $ \pstate -> case find' pstate name of
+mustFind name = state $ \pstate -> case find' name pstate of
     Just x  -> (x, pstate)
     Nothing -> throw $ UnknownSymbol name
 
 find :: Id -> AppState (Maybe Value)
-find name = do
-    st <- get
-    return $ find' st name
+find name = get >>= (pure . find' name)
 
-find' :: PState -> Id -> Maybe Value
-find' st name = case st of
-    PState (sc : _) gl -> case Scope.find sc name of
-            Just v  -> Just v
-            Nothing -> Scope.find gl name
-    PState [] gl -> Scope.find gl name
+find' :: Id -> PState -> Maybe Value
+find' name = \case
+    PState (sc : _) gl -> case Scope.find name sc of
+        Just v  -> Just v
+        Nothing -> Scope.find name gl
+    PState [] gl -> Scope.find name gl
 
-findTop' :: PState -> Id -> Maybe Value
-findTop' st name = case st of
-    PState (sc : _) _ -> Scope.find sc name
-    PState [] gl      -> Scope.find gl name
+findTop' :: Id -> PState -> Maybe Value
+findTop' name = \case
+    PState (sc : _) _ -> Scope.find name sc
+    PState [] gl      -> Scope.find name gl
 
 overwrite :: Id -> Value -> AppState ()
-overwrite name value = state $ \case
-    PState (sc : rest) gl -> ((), PState (Scope.insert name value sc : rest) gl)
-    PState [] gl          -> ((), PState [] (Scope.insert name value gl))
+overwrite name value = applyToTopScope (Scope.insert name value)
 
 setConst :: Bool -> Id -> AppState ()
-setConst isConst' name = state $ \case
-    PState (sc : rest) gl -> ((), PState (Scope.setConst isConst' name sc : rest) gl)
-    PState [] gl          -> ((), PState [] (Scope.setConst isConst' name gl))
+setConst isConst' name = applyToTopScope (Scope.setConst isConst' name)
+
+applyToTopScope :: (Scope.Scope Value -> Scope.Scope Value) -> AppState ()
+applyToTopScope fn = state $ \case
+    PState (sc : rest) gl -> ((), PState (fn sc : rest) gl)
+    PState [] gl          -> ((), PState [] (fn gl))
 
 isConst :: Id -> AppState (Maybe Bool)
 isConst name = do
@@ -163,7 +165,6 @@ isConst name = do
         PState (sc : _) gl -> case Scope.isConst name sc of
             Just v  -> Just v
             Nothing -> Scope.isConst name gl
-
 
 push :: Scope.Scope Value -> AppState ()
 push scope = state $ \(PState scopes gl) -> ((), PState (scope : scopes) gl)
@@ -181,12 +182,12 @@ mustReplace name value = state $ \pstate -> case replace' name value pstate of
 
 replace' :: Id -> Value -> PState -> Maybe PState
 replace' name val state' = case state' of
-    PState (sc : rest) gl -> case Scope.find sc name of
+    PState (sc : rest) gl -> case Scope.find name sc of
         Just _  -> let sc' = Scope.insert name val sc in Just $ PState (sc' : rest) gl
         Nothing -> case replace' name val $ PState [] gl of
             Just (PState _ gl') -> Just $ PState (sc : rest) gl'
             Nothing             -> Nothing
-    PState [] gl -> case Scope.find gl name of
+    PState [] gl -> case Scope.find name gl of
         Just _  -> let gl' = Scope.insert name val gl in Just $ PState [] gl'
         Nothing -> Nothing
 

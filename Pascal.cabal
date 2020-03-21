@@ -32,10 +32,11 @@ executable RunPascal
                       , array
                       , containers
                       , mtl
+                      , deepseq
   build-tools:         happy, alex
   default-language:    Haskell2010
   ghc-options:         -Wall
-  default-extensions: LambdaCase, BlockArguments
+  default-extensions: LambdaCase, BlockArguments, BangPatterns, DeriveAnyClass, DeriveGeneric
                       
 
 
@@ -55,8 +56,9 @@ Test-Suite Unit
                           , mtl
                           , hspec
                           , QuickCheck
+                          , deepseq
     build-tools:          happy, alex
     build-tool-depends:   hspec-discover:hspec-discover == 2.*
     default-language:     Haskell2010
     ghc-options:          -Wall -fno-warn-missing-home-modules
-    default-extensions: LambdaCase, BlockArguments, BangPatterns
+    default-extensions: LambdaCase, BlockArguments, BangPatterns, DeriveAnyClass, DeriveGeneric

@@ -156,7 +156,7 @@ evalExpr e = case e of
             (Just v1', Just v2') -> do
                 v3 <- combine op v1' v2'
                 return $ Just v3
-    _                   -> throw S.NotImplemented
+    _ -> throw S.NotImplemented
 
 evalFuncCall :: FuncCall -> S.AppState (Maybe S.Value)
 evalFuncCall (FuncCall name exprs) = do

@@ -3,19 +3,22 @@
 
 module Pascal.Data where
 
+import           Control.DeepSeq (NFData)
+import           GHC.Generics    (Generic)
+
 data Program = Program Id Block
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 data Block = Block
     { blockDecls :: [Decl]
     , blockStmts :: [Stmt]
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 data Decl = VarDecls [VarDecl]
     | ConstDecls [VarDecl]
     | FuncDecl Func
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 data VarDecl = Decl
     { dname   :: Id
@@ -30,7 +33,7 @@ data VarDecl = Decl
     { dname :: Id
     , expr  :: Expr
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 data Func = Func
     { fname      :: Id
@@ -38,7 +41,7 @@ data Func = Func
     , returnType :: PascalType
     , block      :: Block
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 data Stmt = AssignStmt Id Expr
     | BreakStmt
@@ -55,13 +58,13 @@ data Stmt = AssignStmt Id Expr
     { getWhileExpr :: Expr
     , getWhileStmt :: Stmt
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 data CaseDecl = CaseDecl [IntRange] Stmt
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 data IntRange = IntRange Int Int
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 data Expr = UnaryExpr String Expr
     | BinaryExpr String Expr Expr
@@ -71,19 +74,19 @@ data Expr = UnaryExpr String Expr
     | StrExpr String
     | FltExpr Float
     | BoolExpr Bool
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 newtype Id
     = Id {
         toString :: String
     }
-    deriving (Eq, Ord)
+    deriving (Eq, Ord, NFData, Generic)
 
 instance Show Id where
     show _id = "(Id " ++ toString _id ++ ")"
 
 data FuncCall = FuncCall Id [Expr]
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
 data PascalType = TypeBool
     | TypeInt
@@ -92,4 +95,4 @@ data PascalType = TypeBool
     | TypeFunc
     | TypeNativeFunc
     | TypeNone
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)

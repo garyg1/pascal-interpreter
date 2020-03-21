@@ -1,6 +1,7 @@
 module Pascal.InterpretSpec (spec) where
 
-import           Control.Exception
+import           Control.DeepSeq
+import           Control.Exception    (evaluate, throw)
 import           Control.Monad.Except
 import           Control.Monad.State  (get)
 import           Data.Maybe           (fromJust)
@@ -77,14 +78,12 @@ spec = do
                 S.mustFind (D.Id "foo")
                 ) >>= (`shouldBe` S.NamedValue (D.Id "foo") (S.BoolValue True))
 
-        it "should throw if cannot cast expr to type of declaration" $
-            run extract (do
+        it "should throw if cannot cast expr to type of declaration" $ do
+            val <- run extract (do
                 I.visitVarDecl False $ D.DeclTypeDefn (D.Id "foo") D.TypeInt (D.BoolExpr True)
-
-                -- force evaluation of the value contained in `foo`
-                S.NamedValue _ v <- S.mustFind (D.Id "foo")
-                v `seq` return ()
-                ) `shouldThrow` anyException -- cannot cast
+                S.mustFind (D.Id "foo")
+                )
+            (evaluate . force) val `shouldThrow` anyException -- cannot cast
 
         it "should cast to declared type and assign if allowed" $
             run extract (do

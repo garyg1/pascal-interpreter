@@ -6,12 +6,15 @@ module Pascal.Data where
 data Program = Program Id Block
     deriving (Show, Eq)
 
-data Block = Block [Decl] [Stmt]
+data Block = Block
+    { blockDecls :: [Decl]
+    , blockStmts :: [Stmt]
+    }
     deriving (Show, Eq)
 
 data Decl = VarDecls [VarDecl]
     | ConstDecls [VarDecl]
-    | FuncDecl FuncOrProc
+    | FuncDecl Func
     deriving (Show, Eq)
 
 data VarDecl = Decl
@@ -29,7 +32,7 @@ data VarDecl = Decl
     }
     deriving (Show, Eq)
 
-data FuncOrProc = Func
+data Func = Func
     { fname      :: Id
     , params     :: [VarDecl]
     , returnType :: PascalType
@@ -48,7 +51,10 @@ data Stmt = AssignStmt Id Expr
     | IfElseStmt Expr Stmt Stmt
     | IfStmt Expr Stmt
     | Stmts [Stmt]
-    | WhileStmt Expr Stmt
+    | WhileStmt
+    { getWhileExpr :: Expr
+    , getWhileStmt :: Stmt
+    }
     deriving (Show, Eq)
 
 data CaseDecl = CaseDecl [IntRange] Stmt
@@ -74,7 +80,7 @@ newtype Id
     deriving (Eq, Ord)
 
 instance Show Id where
-    show _id = "'Id: " ++ (toString _id) ++ "'"
+    show _id = "(Id " ++ toString _id ++ ")"
 
 data FuncCall = FuncCall Id [Expr]
     deriving (Show, Eq)

@@ -15,9 +15,9 @@ build-type:          Simple
 extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
-executable Pascal
+executable RunPascal
   main-is:             Main.hs
-  -- other-modules:       
+  hs-source-dirs:      src
   other-modules:       Pascal
                      , Pascal.Interpret
                      , Pascal.Parser
@@ -27,15 +27,36 @@ executable Pascal
                      , Pascal.Wrapper
                      , Pascal.State
                      , Pascal.Scope
-  -- other-extensions:    
   build-depends:       base >= 4.7
                       , bytestring
                       , array
-                      , hspec
                       , containers
                       , mtl
-
-  hs-source-dirs:      src
   build-tools:         happy, alex
   default-language:    Haskell2010
   ghc-options:         -Wall
+  default-extensions: LambdaCase, BlockArguments
+                      
+
+
+Test-Suite Unit
+    type:                 exitcode-stdio-1.0
+    main-is:              Spec.hs
+    hs-source-dirs:       test, src
+    other-modules:        Pascal.Interpret
+                          , Pascal.Data
+                          , Pascal.State
+                          , Pascal.Scope
+    build-depends:        base >= 4.7
+                          , bytestring
+                          , array
+                          , hspec
+                          , containers
+                          , mtl
+                          , hspec
+                          , QuickCheck
+    build-tools:          happy, alex
+    build-tool-depends:   hspec-discover:hspec-discover == 2.*
+    default-language:     Haskell2010
+    ghc-options:          -Wall -fno-warn-missing-home-modules
+    default-extensions: LambdaCase, BlockArguments, BangPatterns

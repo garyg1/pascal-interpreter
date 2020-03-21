@@ -8,10 +8,10 @@ var result : integer = 1;
 begin
     while exp > 0 do
     begin
-        if exp mod 2 = 1 then
+        if (exp mod 2) = 1 then
             result := (result * base) mod modulus;
         exp := exp / 2;
-        base := base * base mod modulus;
+        base := (base * base) mod modulus;
     end;
     fme := result;
 end;

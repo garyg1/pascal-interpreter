@@ -1,14 +1,13 @@
 module Pascal.State where
 
 import           Control.Exception
-import           Control.Monad.State
 import           Control.Monad.Except
+import           Control.Monad.State
+import           Data.Char            (toLower)
 import           Pascal.Data
-import qualified Pascal.Scope        as Scope
+import qualified Pascal.Scope         as Scope
 
 data InterpreterError = UnknownSymbol Id
-    | CannotCombine
-    | CannotEval
     | IncorrectType
     { location :: String
     , expected :: PascalType
@@ -17,15 +16,20 @@ data InterpreterError = UnknownSymbol Id
     | IncorrectArgs Id [Value] [VarDecl]
     | NotImplemented
     | DuplicateDeclaration Id
+    | CannotBeConst Id
     | VariableExpected String
+    | UndeclaredSymbol Id
     | InternalError String
+    | CannotCast PascalType Value
+    | CannotCombine String String
+    | CannotEval Expr
     | CannotRead PascalType
-    deriving (Show)
+    deriving (Show, Eq)
 instance Exception InterpreterError
 
 data Events = Continue
     | Break
-    deriving (Show)
+    deriving (Show, Eq)
 instance Exception Events
 
 data Value = IntValue
@@ -34,23 +38,41 @@ data Value = IntValue
     | StrValue String
     | FloatValue Float
     | BoolValue Bool
-    | NamedValue Id Value
+    | NamedValue
+    { getName  :: Id
+    , getValue :: Value
+    }
     | FuncValue
-    { getFunc :: FuncOrProc
+    { getFunc :: Func
     }
     | NativeFuncValue
     { getNativeFunc :: NativeFunc
     }
-    deriving (Show, Eq)
+    deriving (Eq)
 
-data NativeFunc = NativeFunc ([Value] -> AppState (Maybe Value))
+instance Show Value where
+    show (IntValue i)        = show i
+    show (StrValue s)        = s
+    show (FloatValue f)      = show f
+    show (BoolValue b)       = map toLower $ show b
+    show (NamedValue _ v)    = show v
+    show (FuncValue _)       = "<function>"
+    show (NativeFuncValue _) = "<native-function>"
+
+debugShow :: Value -> String
+debugShow (NamedValue n v) = "NamedValue '" ++ toString n ++ "'" ++ show v
+debugShow other            = show other
+
+data NativeFunc = NativeFunc
+    { nfName :: Id
+    , nfFunc :: [Value] -> AppState (Maybe Value)
+    }
 
 instance Show NativeFunc where
     show _ = "<Native Function>"
 
 instance Eq NativeFunc where
-    _ == _ = False
-
+    (NativeFunc n1 _) == (NativeFunc n2 _) = n1 == n2
 
 valueOf :: PascalType -> Value
 valueOf TypeBool   = BoolValue False
@@ -68,30 +90,40 @@ typeOf (NamedValue _ val)  = typeOf val
 typeOf (FuncValue _)       = TypeFunc
 typeOf (NativeFuncValue _) = TypeNativeFunc
 
-
 data PState = PState
     { stack  :: [Scope.Scope Value]
     , global :: Scope.Scope Value
     }
     deriving (Show, Eq)
 
+{- we use exceptions for "continue" and "break",
+so State must be returned EVEN IF there's an Monad.Except event -}
 type AppState = ExceptT Events (StateT PState IO)
+type AppReturn a = (Either Events a, PState)
 
-runApp :: AppState a0 -> IO (Either Events a0, PState)
+runApp :: AppState a -> IO (AppReturn a)
 runApp f = runStateT (runExceptT f) new
 
+new :: PState
+new = PState [] Scope.empty
+
 declare :: Bool -> Id -> Value -> AppState ()
-declare isConst name value = do
+declare isConst' name value = do
     st <- get
     case findTop' st name of
         Just _  -> throw $ DuplicateDeclaration name
         Nothing -> do
             overwrite name value
-            if isConst
-                then setConst True name
-                else return ()
+            when isConst' $
+                setConst True name
 
-mustFind :: Id -> AppState (Value)
+declareVar :: Id -> Value -> AppState ()
+declareVar = declare False
+
+declareConst :: Id -> Value -> AppState ()
+declareConst = declare True
+
+mustFind :: Id -> AppState Value
 mustFind name = state $ \pstate -> case find' pstate name of
     Just x  -> (x, pstate)
     Nothing -> throw $ UnknownSymbol name
@@ -114,14 +146,24 @@ findTop' st name = case st of
     PState [] gl      -> Scope.find gl name
 
 overwrite :: Id -> Value -> AppState ()
-overwrite name value = state $ \pstate -> case pstate of
-    PState (sc : rest) gl -> ((), PState ((Scope.insert name value sc) : rest) gl)
+overwrite name value = state $ \case
+    PState (sc : rest) gl -> ((), PState (Scope.insert name value sc : rest) gl)
     PState [] gl          -> ((), PState [] (Scope.insert name value gl))
 
 setConst :: Bool -> Id -> AppState ()
-setConst isConst name = state $ \pstate -> case pstate of
-    PState (sc : rest) gl -> ((), PState ((Scope.setConst isConst name sc) : rest) gl)
-    PState [] gl          -> ((), PState [] (Scope.setConst isConst name gl))
+setConst isConst' name = state $ \case
+    PState (sc : rest) gl -> ((), PState (Scope.setConst isConst' name sc : rest) gl)
+    PState [] gl          -> ((), PState [] (Scope.setConst isConst' name gl))
+
+isConst :: Id -> AppState (Maybe Bool)
+isConst name = do
+    st <- get
+    return $ case st of
+        PState [] gl       -> Scope.isConst name gl
+        PState (sc : _) gl -> case Scope.isConst name sc of
+            Just v  -> Just v
+            Nothing -> Scope.isConst name gl
+
 
 push :: Scope.Scope Value -> AppState ()
 push scope = state $ \(PState scopes gl) -> ((), PState (scope : scopes) gl)
@@ -140,7 +182,7 @@ mustReplace name value = state $ \pstate -> case replace' name value pstate of
 replace' :: Id -> Value -> PState -> Maybe PState
 replace' name val state' = case state' of
     PState (sc : rest) gl -> case Scope.find sc name of
-        Just _  -> let sc' = (Scope.insert name val sc) in Just $ PState (sc' : rest) gl
+        Just _  -> let sc' = Scope.insert name val sc in Just $ PState (sc' : rest) gl
         Nothing -> case replace' name val $ PState [] gl of
             Just (PState _ gl') -> Just $ PState (sc : rest) gl'
             Nothing             -> Nothing
@@ -148,5 +190,3 @@ replace' name val state' = case state' of
         Just _  -> let gl' = Scope.insert name val gl in Just $ PState [] gl'
         Nothing -> Nothing
 
-new :: PState
-new = PState [] Scope.empty

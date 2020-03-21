@@ -29,6 +29,8 @@ begin
     while fact(a) > 500 do begin
         a := a - 1;
     end;
+    writeln('a was ', a);
+
     case a of
         1..3, 5: result := 'a was in 1..3 or 5';
         else result := '';
@@ -38,11 +40,21 @@ begin
         if a = 5 then break;
         writeln(a);
     end;
-    writeln(a);
+
+    writeln('a was ', a);
+
     for a := 10 downto 1 do 
     begin
         writeln(a);
     end;
 
-    writeln(ln(1), exp(1), cos(1), sin(1), sqrt(1));
+    writeln('a was ', a);
+
+    writeln(
+        ln(1),
+        '|', exp(1),
+        '|', cos(1),
+        '|', sin(1),
+        '|', sqrt(1)
+    );
 end.

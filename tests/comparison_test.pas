@@ -8,6 +8,11 @@ Var
 Const
     t : boolean = true;
     f : boolean = false;
+    s1 : string = 'alpha';
+    s2 : string = 'Alpha';
+    s3 : string = 'omega';
+    s4 : string = 'alpha';
+    s5 : string = 'alphabet';
 
 begin
     (* assert all operators work as expected *)
@@ -34,4 +39,12 @@ begin
 
     result := (t = f) and (t <> f);
     Writeln(result);
+
+    Writeln(
+        s1 < s2,
+        '|', s2 < s3,
+        '|', s3 < s4,
+        '|', s1 = s4,
+        '|', s1 = s5,
+    );
 end.

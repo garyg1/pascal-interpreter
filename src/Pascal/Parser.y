@@ -128,10 +128,10 @@ IdList :: {[Id]}
     : ID                        { [Id $1] }
     | ID ',' IdList             { Id $1 : $3 }
 
-Func :: {FuncOrProc}
+Func :: {Func}
     : ID '(' ParamList ')' ':' Type ';' Block ';' { Func (Id $1) $3 $6 $8 }
 
-Proc :: {FuncOrProc}
+Proc :: {Func}
     : ID '(' ParamList ')' ';' Block ';' { Func (Id $1) $3 TypeNone $6 }
 
 ParamList :: {[VarDecl]}

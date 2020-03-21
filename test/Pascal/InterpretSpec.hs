@@ -1,23 +1,15 @@
 module Pascal.InterpretSpec (spec) where
 
-import           Control.Exception
+import           Control.DeepSeq
+import           Control.Exception    (evaluate)
 import           Control.Monad.Except
 import           Control.Monad.State  (get)
 import           Data.Maybe           (fromJust)
 import qualified Pascal.Data          as D
 import qualified Pascal.Interpret     as I
 import qualified Pascal.State         as S
+import           Pascal.TestUtils     (extract, run)
 import           Test.Hspec
-
-extract :: S.AppReturn a -> a
-extract st = case st of
-    (Right val, _) -> val
-    (Left ev, _)   -> throw ev
-
-run :: (S.AppReturn a -> b) -> S.AppState a -> IO b
-run extractor fn = do
-    state <- S.runApp fn
-    return $ extractor state
 
 mockValues :: [S.Value]
 mockValues = [
@@ -77,14 +69,12 @@ spec = do
                 S.mustFind (D.Id "foo")
                 ) >>= (`shouldBe` S.NamedValue (D.Id "foo") (S.BoolValue True))
 
-        it "should throw if cannot cast expr to type of declaration" $
-            run extract (do
+        it "should throw if cannot cast expr to type of declaration" $ do
+            val <- run extract (do
                 I.visitVarDecl False $ D.DeclTypeDefn (D.Id "foo") D.TypeInt (D.BoolExpr True)
-
-                -- force evaluation of the value contained in `foo`
-                S.NamedValue _ v <- S.mustFind (D.Id "foo")
-                v `seq` return ()
-                ) `shouldThrow` anyException -- cannot cast
+                S.mustFind (D.Id "foo")
+                )
+            (evaluate . force) val `shouldThrow` anyException -- cannot cast
 
         it "should cast to declared type and assign if allowed" $
             run extract (do

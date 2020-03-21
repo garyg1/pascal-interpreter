@@ -5,20 +5,22 @@ import           Data.Functor
 import qualified Data.Map          as Map
 import qualified Data.Set          as Set
 import           Pascal.Data
+import           GHC.Generics         (Generic)
+import           Control.DeepSeq      (NFData)
 
 data ScopeError = UnknownSymbol Id
     | CannotAssignToConst Id
-    deriving (Show)
+    deriving (Show, Eq, NFData, Generic)
 instance Exception ScopeError
 
 data Scope a = Scope
     { vars         :: Map.Map Id a
     , constSymbols :: Set.Set Id
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, NFData, Generic)
 
-find :: Scope a -> Id -> Maybe a
-find (Scope vs _) name = Map.lookup name vs
+find :: Id -> Scope a -> Maybe a
+find name = Map.lookup name . vars
 
 empty :: Scope a
 empty = Scope Map.empty Set.empty

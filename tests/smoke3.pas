@@ -26,7 +26,7 @@ var a: integer = 10;
 
 const c = 1;
 begin
-    while fact(a) > 500 do begin
+    while fact(a) > 1000 do begin
         a := a - 1;
     end;
     writeln('a was ', a);

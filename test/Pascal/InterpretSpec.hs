@@ -1,24 +1,15 @@
 module Pascal.InterpretSpec (spec) where
 
 import           Control.DeepSeq
-import           Control.Exception    (evaluate, throw)
+import           Control.Exception    (evaluate)
 import           Control.Monad.Except
 import           Control.Monad.State  (get)
 import           Data.Maybe           (fromJust)
 import qualified Pascal.Data          as D
 import qualified Pascal.Interpret     as I
 import qualified Pascal.State         as S
+import           Pascal.TestUtils     (extract, run)
 import           Test.Hspec
-
-extract :: S.AppReturn a -> a
-extract st = case st of
-    (Right val, _) -> val
-    (Left ev, _)   -> throw ev
-
-run :: (S.AppReturn a -> b) -> S.AppState a -> IO b
-run extractor fn = do
-    state <- S.runApp fn
-    return $ extractor state
 
 mockValues :: [S.Value]
 mockValues = [

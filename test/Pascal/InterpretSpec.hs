@@ -690,6 +690,9 @@ spec = do
     describe "splitAtSpace" $ do
         it "should split at the first space on a normal string" $
             I.splitAtSpace "my string is cool" `shouldBe` ("my", "string is cool")
+        
+        it "should split at the first newline on a normal string" $
+            I.splitAtSpace "mystring\n is\n cool" `shouldBe` ("mystring", " is\n cool")
 
         it "should split at the first character if that's a space" $
             I.splitAtSpace " space is first" `shouldBe` ("", "space is first")

@@ -1,14 +1,20 @@
 module Pascal.State where
 
-import           Control.DeepSeq      (NFData)
+import           Control.DeepSeq       (NFData)
 import           Control.Exception
 import           Control.Monad.Except
+import           Control.Monad.Reader
 import           Control.Monad.State
-import           Data.Char            (toLower)
+import           Data.ByteString       (ByteString)
+import qualified Data.ByteString.Char8 as C
+import           Data.Char             (toLower)
 import           Data.Functor
-import           GHC.Generics         (Generic)
+import           Data.Maybe            (fromJust)
+import           GHC.Generics          (Generic)
 import           Pascal.Data
-import qualified Pascal.Scope         as Scope
+import qualified Pascal.Scope          as Scope
+import           System.IO.Streams     (InputStream, OutputStream)
+import qualified System.IO.Streams     as Streams
 
 data InterpreterError = UnknownSymbol Id
     | IncorrectType
@@ -102,14 +108,21 @@ data PState = PState
 
 {- we use exceptions for "continue" and "break",
 so State must be returned EVEN IF there's an Monad.Except event -}
-type AppState = ExceptT Events (StateT PState IO)
+type AppState = ExceptT Events (StateT PState (ReaderT AppIO IO))
 type AppReturn a = (Either Events a, PState)
+type AppIO = (InputStream ByteString, OutputStream ByteString)
 
-runApp :: AppState a -> IO (AppReturn a)
-runApp f = runStateT (runExceptT f) new
+runApp :: AppIO -> AppState a -> IO (AppReturn a)
+runApp appIO fn = runReaderT (runStateT (runExceptT fn) new) appIO
 
 new :: PState
 new = PState [] Scope.empty
+
+getline :: AppState String
+getline = (ask >>= liftIO . Streams.read . fst) <&> (C.unpack . fromJust)
+
+putline :: String -> AppState ()
+putline line = ask >>= liftIO . Streams.write ((Just . C.pack) line) . snd
 
 declare :: Bool -> Id -> Value -> AppState ()
 declare isConst' name value = do

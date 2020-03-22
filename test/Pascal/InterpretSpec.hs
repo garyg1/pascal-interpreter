@@ -11,6 +11,9 @@ import qualified Pascal.State         as S
 import           Pascal.TestUtils     (extract, run)
 import           Test.Hspec
 
+-- TODO test combine
+-- TODO test marshal
+
 mockValues :: [S.Value]
 mockValues = [
     S.BoolValue False,

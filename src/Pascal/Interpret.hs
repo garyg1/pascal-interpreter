@@ -52,10 +52,14 @@ visitStmt stmt = case stmt of
 visitAssignStmt :: Id -> Expr -> S.AppState ()
 visitAssignStmt name e = do
     rhs <- mustEvalExpr e
+    visitAssignStmt' name rhs
+
+visitAssignStmt' :: Id -> S.Value -> S.AppState ()
+visitAssignStmt' name rhs = do
     lhs <- S.mustFind name
     case (lhs, rhs) of
         (S.FuncValue _, S.FuncValue _)             -> S.mustReplace name rhs
-        (S.FuncValue f, _)                         -> visitAssignStmt (rvName f) e
+        (S.FuncValue f, _)                         -> visitAssignStmt' (rvName f) rhs
         (S.NativeFuncValue _, S.NativeFuncValue _) -> S.mustReplace name rhs
         (_, _)                                     -> S.mustReplace name $ S.NamedValue name $
                                                         mustCast (S.typeOf lhs) rhs
@@ -194,7 +198,7 @@ readln args = do
     unless (all isvar args) $
         throw $ S.VariableExpected "readln"
     foldM_ (\(line, shouldFlush) (S.NamedValue name val) -> do
-        line' <- if shouldFlush then liftIO getLine else return line
+        line' <- if shouldFlush then S.getline else return line
         case S.typeOf val of
             TypeString -> do
                 S.overwrite name $ S.NamedValue name $ S.StrValue line'
@@ -210,9 +214,9 @@ readln args = do
     return Nothing
 
 writeln :: [S.Value] -> S.AppState (Maybe S.Value)
-writeln args = liftIO $ do
-    mapM_ (putStr . show) args
-    putStrLn ""
+writeln args = do
+    mapM_ (S.putline . show) args
+    S.putline "\n"
     return Nothing
 
 nativeFuncFrom :: Id -> (Float -> Float) -> S.Value

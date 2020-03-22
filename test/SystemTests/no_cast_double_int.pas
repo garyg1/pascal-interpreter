@@ -4,4 +4,5 @@ var i : integer;
 
 begin
     i := 1.0;
+    writeln(i);
 end.

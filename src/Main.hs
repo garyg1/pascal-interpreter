@@ -1,19 +1,20 @@
 module Main where
 
-import           Control.Exception
 import           Data.Char
-import           Pascal
-import qualified Pascal.State        as S
+import qualified Pascal
 import           System.Environment
+import           System.IO.Streams  (stdin, stdout)
+import qualified System.IO.Streams as Streams
 
 main :: IO ()
 main = do
-    (fileName:_) <- getArgs
-    putStrLn $ "Running " ++ fileName
+    (fileName : _) <- getArgs
     contents <- readFile fileName
 
-    _ <- case parseString $ map toLower contents of
-        Right p -> S.runApp $ interpret p
-        Left err -> throw $ S.InternalError $ show err
+    stdin' <- Streams.lines stdin
+
+    _ <- case Pascal.parseString $ map toLower contents of
+        Right p  -> Pascal.runApp (stdin', stdout) (Pascal.interpret p)
+        Left err -> error $ show err
 
     return ()

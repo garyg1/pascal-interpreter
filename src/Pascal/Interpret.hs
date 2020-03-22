@@ -52,10 +52,14 @@ visitStmt stmt = case stmt of
 visitAssignStmt :: Id -> Expr -> S.AppState ()
 visitAssignStmt name e = do
     rhs <- mustEvalExpr e
+    visitAssignStmt' name rhs
+
+visitAssignStmt' :: Id -> S.Value -> S.AppState ()
+visitAssignStmt' name rhs = do
     lhs <- S.mustFind name
     case (lhs, rhs) of
         (S.FuncValue _, S.FuncValue _)             -> S.mustReplace name rhs
-        (S.FuncValue f, _)                         -> visitAssignStmt (rvName f) e
+        (S.FuncValue f, _)                         -> visitAssignStmt' (rvName f) rhs
         (S.NativeFuncValue _, S.NativeFuncValue _) -> S.mustReplace name rhs
         (_, _)                                     -> S.mustReplace name $ S.NamedValue name $
                                                         mustCast (S.typeOf lhs) rhs
@@ -156,7 +160,12 @@ evalExpr e = case e of
             (Just v1', Just v2') -> do
                 v3 <- combine op v1' v2'
                 return $ Just v3
-    _ -> throw S.NotImplemented
+    UnaryExpr op u1 -> do
+        val <- mustEvalExpr u1
+        Just <$> case op of
+            "-"   -> combine "*" val (S.IntValue (- 1))
+            "not" -> combine "xor" val (S.BoolValue True)
+            _     -> throw S.NotImplemented
 
 evalFuncCall :: FuncCall -> S.AppState (Maybe S.Value)
 evalFuncCall (FuncCall name exprs) = do
@@ -194,7 +203,7 @@ readln args = do
     unless (all isvar args) $
         throw $ S.VariableExpected "readln"
     foldM_ (\(line, shouldFlush) (S.NamedValue name val) -> do
-        line' <- if shouldFlush then liftIO getLine else return line
+        line' <- if shouldFlush then S.getline else return line
         case S.typeOf val of
             TypeString -> do
                 S.overwrite name $ S.NamedValue name $ S.StrValue line'
@@ -210,9 +219,9 @@ readln args = do
     return Nothing
 
 writeln :: [S.Value] -> S.AppState (Maybe S.Value)
-writeln args = liftIO $ do
-    mapM_ (putStr . show) args
-    putStrLn ""
+writeln args = do
+    mapM_ (S.putline . show) args
+    S.putline "\n"
     return Nothing
 
 nativeFuncFrom :: Id -> (Float -> Float) -> S.Value
@@ -316,6 +325,7 @@ mustCast t v = case cast t v of
 -- partially inspired by https://stackoverflow.com/q/40297001/8887313
 splitAtSpace :: String -> (String, String)
 splitAtSpace (' ' : after) = ([], after)
+splitAtSpace ('\n' : after) = ([], after)
 splitAtSpace (x : xs) = let
     (rest, after) = splitAtSpace xs
     in (x : rest, after)

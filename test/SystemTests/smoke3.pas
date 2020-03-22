@@ -7,6 +7,7 @@ begin
 end;
 
     var a: integer;
+    var b : double;
 begin
     readln(a);
     writeln(fact(a));

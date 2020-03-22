@@ -5,5 +5,6 @@ Const
 
 begin
     const1 := 3.0;
+    writeln(const1);
     (* throw ConstAssignmentException *)
 end.

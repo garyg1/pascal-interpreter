@@ -160,7 +160,12 @@ evalExpr e = case e of
             (Just v1', Just v2') -> do
                 v3 <- combine op v1' v2'
                 return $ Just v3
-    _ -> throw S.NotImplemented
+    UnaryExpr op u1 -> do
+        val <- mustEvalExpr u1
+        Just <$> case op of
+            "-"   -> combine "*" val (S.IntValue (- 1))
+            "not" -> combine "xor" val (S.BoolValue True)
+            _     -> throw S.NotImplemented
 
 evalFuncCall :: FuncCall -> S.AppState (Maybe S.Value)
 evalFuncCall (FuncCall name exprs) = do
@@ -320,6 +325,7 @@ mustCast t v = case cast t v of
 -- partially inspired by https://stackoverflow.com/q/40297001/8887313
 splitAtSpace :: String -> (String, String)
 splitAtSpace (' ' : after) = ([], after)
+splitAtSpace ('\n' : after) = ([], after)
 splitAtSpace (x : xs) = let
     (rest, after) = splitAtSpace xs
     in (x : rest, after)

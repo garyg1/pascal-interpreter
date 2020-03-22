@@ -73,10 +73,11 @@ import Pascal.Lexer
         'begin'         { Token _ (TokenK "begin") }
         'and'           { Token _ (TokenK "and") }
 
-%nonassoc '>' '>=' '<' '<=' '==' '!='
-%left '+' '-'
-%left '*' '/'
 %nonassoc ':='
+%nonassoc '>' '>=' '<' '<=' '==' '!=' 'in'
+%left '+' '-' 'or' 'xor' 
+%left '*' '/' 'mod' 'and'
+%left 'not'
 %%
 
 -- Entry point
@@ -213,13 +214,13 @@ Expr :: {Expr}
     | '-' Expr          { UnaryExpr "-" $2 }
     | '(' Expr ')'      { $2 }
     | 'not' Expr        { UnaryExpr "not" $2 }
+    | Expr 'mod' Expr   { BinaryExpr "mod" $1 $3 }
     | Expr '/' Expr     { BinaryExpr "/" $1 $3 }
     | Expr '*' Expr     { BinaryExpr "*" $1 $3 }
-    | Expr 'mod' Expr   { BinaryExpr "mod" $1 $3 }
+    | Expr 'or' Expr    { BinaryExpr "or" $1 $3 }
     | Expr 'and' Expr   { BinaryExpr "and" $1 $3 }
     | Expr '-' Expr     { BinaryExpr "-" $1 $3 }
     | Expr '+' Expr     { BinaryExpr "+" $1 $3 }
-    | Expr 'or' Expr    { BinaryExpr "or" $1 $3 }
     | Expr 'xor' Expr   { BinaryExpr "xor" $1 $3 }
     | Expr '<=' Expr    { BinaryExpr "<=" $1 $3 }
     | Expr '>=' Expr    { BinaryExpr ">=" $1 $3 }

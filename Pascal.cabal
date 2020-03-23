@@ -7,9 +7,9 @@ version:             0.1.0.0
 -- description:         
 license:             MIT
 license-file:        LICENSE
-author:              Change Me
-maintainer:          change@ufl.edu
--- copyright:           
+author:              Gary Gurlaskie
+maintainer:          g.gurlask@ufl.edu
+copyright:           2020
 category:            Text
 build-type:          Simple
 extra-source-files:  ChangeLog.md

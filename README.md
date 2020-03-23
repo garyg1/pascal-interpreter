@@ -8,6 +8,17 @@ COP 4020 Spring 2020, University of Florida
 Prof. Alin Dobra
 ```
 
+### Usage
+#### Run Interpreter
+```
+cabal run RunPascal -- tests/SystemTests/<test-name>.pas
+```
+
+#### Run Tests (System + Unit)
+```
+cabal test
+```
+
 ### Features Implemented
 - all basic requirements (while-do, for-do, break/continue, procedures/functions, static scoping)
 - readln/writeln
@@ -15,7 +26,6 @@ Prof. Alin Dobra
 - used monads (see below)
 
 ### Approach
-
 #### Monads
 I chose to implement the interpreter using a monad stack, including `State`, `Reader`, and `Except`. The stack is defined in `src/Pascal/State.hs`.
 ```haskell
@@ -43,17 +53,6 @@ Instead of using the IO monad directly, I wrapped stdin/stdout using the `io-str
 - happy (https://www.haskell.org/happy/)
 - alex (https://www.haskell.org/alex/)
 - see the `.cabal` file for list of all libraries used
-
-### Usage
-#### Installation
-```
-cabal install
-```
-
-#### Running
-```
-cabal run RunPascal -- tests/<test-name>.pas
-```
 
 ### Stats
 ```bash

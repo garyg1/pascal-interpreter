@@ -822,8 +822,8 @@ spec = do
             floatVal = S.FloatValue 0.0
             strVal = S.StrValue "myStringValue"
             boolVal = S.BoolValue False
-            declareNamed vals = mapM_ (\(n, v) -> S.declareVar n $ S.NamedValue n v) vals
-            convertToNamed vals = map (uncurry S.NamedValue) vals
+            declareNamed = mapM_ (\(n, v) -> S.declareVar n $ S.NamedValue n v)
+            convertToNamed = map (uncurry S.NamedValue)
 
         it "should cast args to corresponding type" $ do
             istream <- Streams.fromByteString $ pack "1 2.2 3\n"
@@ -836,6 +836,32 @@ spec = do
                 vals' <- mapM (\(n, _) -> S.mustFind n) vals
                 return $ map S.getValue vals'
                 ) >>= (`shouldBe` [S.IntValue 1, S.FloatValue 2.2, S.FloatValue 3.0])
+
+        it "should read rest of line for string" $ do
+            istream <- Streams.fromByteString $ pack "1 2.2 3\n1 2.2 3"
+            runWithStreams istream Streams.stdout extract (do
+                let vals = [(name1, strVal), (name2, strVal)]
+
+                declareNamed vals
+                _ <- I.readln (convertToNamed vals)
+
+                vals' <- mapM (\(n, _) -> S.mustFind n) vals
+                return $ map S.getValue vals'
+                ) >>= (`shouldBe` [S.StrValue "1 2.2 3", S.StrValue "1 2.2 3"])
+
+        it "should throw if try to read boolean" $ do
+            istream <- Streams.fromByteString $ pack "true\n"
+            (do
+                rv <- runWithStreams istream Streams.stdout extract (do
+                    let vals = [(name1, boolVal)]
+
+                    declareNamed vals
+                    _ <- I.readln (convertToNamed vals)
+
+                    S.mustFind name1
+                    )
+                (evaluate . force) rv
+                ) `shouldThrow` anyException -- CannotRead
 
         it "should throw if an argument is non-var" $ do
             istream <- Streams.fromByteString $ pack "1 1\n"
@@ -857,27 +883,113 @@ spec = do
                     )
                 (evaluate . force) rv
                 ) `shouldThrow` anyException -- UndeclaredSymbol
+    
+    describe "combine" $ do
+        let int0 = S.IntValue 0
+            int1 = S.IntValue 1
+            int2 = S.IntValue 2
+            float0 = S.FloatValue 0.0
+            float1 = S.FloatValue 1.0
+            float2 = S.FloatValue 2.0
+            stra = S.StrValue "a"
+            strb = S.StrValue "b"
+            strab = S.StrValue "ab"
+            boolFalse = S.BoolValue False
+            boolTrue = S.BoolValue True
 
-        it "should read rest of line for string" $ do
-            istream <- Streams.fromByteString $ pack "1 2.2 3\n1 2.2 3"
-            runWithStreams istream Streams.stdout extract (do
-                let vals = [(name1, strVal), (name2, strVal)]
+        it "should divide int / int to int" $
+            run extract (I.combine "/" int1 int2) >>= (`shouldBe` int0)
 
-                declareNamed vals
-                _ <- I.readln (convertToNamed vals)
+        it "should evaluate int mod int to int" $
+            run extract (I.combine "mod" int1 int2) >>= (`shouldBe` int1)
 
-                vals' <- mapM (\(n, _) -> S.mustFind n) vals
-                return $ map S.getValue vals'
-                ) >>= (`shouldBe` [S.StrValue "1 2.2 3", S.StrValue "1 2.2 3"])
+        it "should multiply int * int to int" $
+            run extract (I.combine "*" int1 int2) >>= (`shouldBe` int2)
 
-        it "should throw if try to read boolean" $ do
-            istream <- Streams.fromByteString $ pack "true\n"
+        it "should compare int > int to bool" $
+            run extract (I.combine ">" int1 int2) >>= (`shouldBe` boolFalse)
+
+        it "should divide float / float to float" $
+            run extract (I.combine "/" float0 float1) >>= (`shouldBe` float0)
+        
+        it "should multiply float * float to float" $
+            run extract (I.combine "*" float1 float2) >>= (`shouldBe` float2)
+
+        it "should compare float > float to bool" $
+            run extract (I.combine ">" float1 float2) >>= (`shouldBe` boolFalse)
+
+        it "should add string + string to string" $
+            run extract (I.combine "+" stra strb) >>= (`shouldBe` strab)
+
+        it "should compare string string to bool" $
+            run extract (I.combine ">" stra strb) >>= (`shouldBe` boolFalse)
+
+        it "should evaluate bool and bool to bool" $
+            run extract (I.combine "and" boolTrue boolTrue) >>= (`shouldBe` boolTrue)
+
+        it "should compare bool and bool to bool" $
+            run extract (I.combine ">" boolFalse boolTrue) >>= (`shouldBe` boolFalse)
+
+        it "should cast (float, int) to (float, float) and then evaluate to float" $
+            run extract (I.combine "+" int1 float1) >>= (`shouldBe` float2)
+
+        it "should throw if cnanot cast types to each other" $
             (do
-                rv <- runWithStreams istream Streams.stdout extract (do
-                    let vals = [(name1, boolVal)]
-                    declareNamed vals
-                    _ <- I.readln (convertToNamed vals)
-                    S.mustFind name1
-                    )
-                (evaluate . force) rv
-                ) `shouldThrow` anyException -- CannotRead
+                val <- run extract (I.combine "+" stra int1)
+                (evaluate . force) val
+                ) `shouldThrow` anyException
+
+    describe "marshal" $ do
+        let name1 = D.Id "exists1"
+            mockFunc1 = D.Func name1 [] D.TypeBool mockBlock
+            func1 = S.FuncValue mockFunc1
+            int1 = S.IntValue 1
+            float1 = S.FloatValue 1.0
+            str1 = S.StrValue "1"
+            boolTrue = S.BoolValue True
+
+        it "should convert func value as first argument to return value" $
+            run extract (do
+                S.declareVar (I.rvName mockFunc1) int1
+                I.marshal (func1, int1)
+                ) >>= (`shouldBe` Just (int1, int1))
+
+        it "should convert func value as second argument to return value" $
+            run extract (do
+                S.declareVar name1 func1
+                S.declareVar (I.rvName mockFunc1) int1
+                I.marshal (int1, func1)
+                ) >>= (`shouldBe` Just (int1, int1))
+
+        it "should convert func value as second argument to return value" $
+            run extract (do
+                S.declareVar name1 func1
+                S.declareVar (I.rvName mockFunc1) int1
+                I.marshal (int1, func1)
+                ) >>= (`shouldBe` Just (int1, int1))
+
+        it "should convert named value as first argument to value" $
+            run extract (
+                I.marshal (S.NamedValue name1 int1, int1)
+                ) >>= (`shouldBe` Just (int1, int1))
+
+        it "should convert named value as second argument to value" $
+            run extract (
+                I.marshal (int1, S.NamedValue name1 int1)
+                ) >>= (`shouldBe` Just (int1, int1))
+
+        it "should convert int value as first argument to float value" $
+            run extract (
+                I.marshal (int1, float1)
+                ) >>= (`shouldBe` Just (float1, float1))
+
+        it "should return pair of same primitive type" $ do
+            run extract (I.marshal (int1, int1)) >>= (`shouldBe` Just (int1, int1))
+            run extract (I.marshal (float1, float1)) >>= (`shouldBe` Just (float1, float1))
+            run extract (I.marshal (str1, str1)) >>= (`shouldBe` Just (str1, str1))
+            run extract (I.marshal (boolTrue, boolTrue)) >>= (`shouldBe` Just (boolTrue, boolTrue))
+        
+        it "should throw if return value cannot be found" $
+            run extract (
+                I.marshal (func1, int1)
+                ) `shouldThrow` anyException

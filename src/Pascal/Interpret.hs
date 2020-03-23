@@ -291,6 +291,7 @@ combineToBool op n1 n2 = case op of
     ">=" -> n1 >= n2
     _    -> throw $ S.CannotCombine (show n1) (show n2)
 
+-- attempts to construct a pair of the same PRIMITIVE type (int, str, float, bool) by casting and/or dereferencing
 marshal :: (S.Value, S.Value) -> S.AppState (Maybe (S.Value, S.Value))
 marshal (v1, v2) = case (v1, v2) of
     (S.FuncValue f, _) -> do
@@ -299,11 +300,21 @@ marshal (v1, v2) = case (v1, v2) of
     (_, S.FuncValue g) -> do
         v2' <- S.mustFind $ rvName g
         marshal (v1, v2')
+    
+    (S.NamedValue _ v1', _) -> marshal (v1', v2)
+    (_, S.NamedValue _ v2') -> marshal (v1, v2')
 
     (S.IntValue _, S.FloatValue _) -> return $ Just (mustCast TypeFloat v1, v2)
     (S.FloatValue _, S.IntValue _) -> return $ Just (v1, mustCast TypeFloat v2)
 
-    (_, _) -> return Nothing
+    (S.IntValue _, S.IntValue _) -> return $ Just (v1, v2)
+    (S.FloatValue _, S.FloatValue _) -> return $ Just (v1, v2)
+    (S.BoolValue _, S.BoolValue _) -> return $ Just (v1, v2)
+    (S.StrValue _, S.StrValue _) -> return $ Just (v1, v2)
+
+    (_, _) -> do
+        liftIO $ print (S.debugShow v1, S.debugShow v2)
+        return Nothing
 
 -- https://annevankesteren.nl/2007/02/haskell-xor
 xor :: Bool -> Bool -> Bool

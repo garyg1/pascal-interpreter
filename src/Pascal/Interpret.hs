@@ -3,6 +3,7 @@ module Pascal.Interpret where
 import           Control.Exception
 import           Control.Monad.Except
 import           Data.Functor
+import           Data.Maybe           (isJust)
 import           Pascal.Data
 import qualified Pascal.State         as S
 
@@ -202,6 +203,13 @@ readln :: [S.Value] -> S.AppState (Maybe S.Value)
 readln args = do
     unless (all isvar args) $
         throw $ S.VariableExpected "readln"
+
+    mapM_ (\(S.NamedValue name _) -> do
+        isConst <- S.isConst name
+        unless (isJust isConst) $
+            throw $ S.UndeclaredSymbol name
+        ) args
+
     foldM_ (\(line, shouldFlush) (S.NamedValue name val) -> do
         line' <- if shouldFlush then S.getline else return line
         case S.typeOf val of

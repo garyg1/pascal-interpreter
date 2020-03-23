@@ -1,15 +1,20 @@
 module Pascal.InterpretSpec (spec) where
 
 import           Control.DeepSeq
-import           Control.Exception    (evaluate)
+import           Control.Exception     (evaluate)
 import           Control.Monad.Except
-import           Control.Monad.State  (get)
-import           Data.Maybe           (fromJust)
-import qualified Pascal.Data          as D
-import qualified Pascal.Interpret     as I
-import qualified Pascal.State         as S
-import           Pascal.TestUtils     (extract, run)
+import           Control.Monad.State   (get)
+import           Data.ByteString.Char8 (pack, unpack)
+import           Data.Knob
+import           Data.Maybe            (fromJust)
+import qualified Pascal.Data           as D
+import qualified Pascal.Interpret      as I
+import qualified Pascal.State          as S
+import           Pascal.TestUtils      (extract, run, runWithStreams)
+import           System.IO             (IOMode (WriteMode), hClose)
+import qualified System.IO.Streams     as Streams
 import           Test.Hspec
+
 
 -- TODO test combine
 -- TODO test marshal
@@ -690,7 +695,7 @@ spec = do
     describe "splitAtSpace" $ do
         it "should split at the first space on a normal string" $
             I.splitAtSpace "my string is cool" `shouldBe` ("my", "string is cool")
-        
+
         it "should split at the first newline on a normal string" $
             I.splitAtSpace "mystring\n is\n cool" `shouldBe` ("mystring", " is\n cool")
 
@@ -779,3 +784,100 @@ spec = do
 
         it "should throw on unknown operand" $
             evaluate (I.combineToBool "?" (1 :: Integer) (2 :: Integer)) `shouldThrow` anyException
+
+    describe "writeln" $ do
+        let makeOS = do
+                knob <- newKnob (pack [])
+                h <- newFileHandle knob "~Pascal-Temp-InMemory.out" WriteMode
+                ostream <- Streams.handleToOutputStream h
+                return (knob, h, ostream)
+
+        it "should print multiline strings" $ do
+            (knob, h, ostream) <- makeOS
+
+            _ <- runWithStreams Streams.stdin ostream extract (
+                I.writeln [S.StrValue "asdf\nasdf"]
+                )
+
+            hClose h
+            actual <- Data.Knob.getContents knob
+            unpack actual `shouldBe` "asdf\nasdf\n"
+
+        it "should print multiple objects" $ do
+            (knob, h, ostream) <- makeOS
+
+            _ <- runWithStreams Streams.stdin ostream extract (
+                I.writeln [S.IntValue 1, S.FloatValue 1.0]
+                )
+
+            hClose h
+            actual <- Data.Knob.getContents knob
+            unpack actual `shouldBe` "11.0\n"
+
+    describe "readln" $ do
+        let name1 = D.Id "name1"
+            name2 = D.Id "name2"
+            name3 = D.Id "name3"
+            intVal = S.IntValue 0
+            floatVal = S.FloatValue 0.0
+            strVal = S.StrValue "myStringValue"
+            boolVal = S.BoolValue False
+            declareNamed vals = mapM_ (\(n, v) -> S.declareVar n $ S.NamedValue n v) vals
+            convertToNamed vals = map (uncurry S.NamedValue) vals
+
+        it "should cast args to corresponding type" $ do
+            istream <- Streams.fromByteString $ pack "1 2.2 3\n"
+            runWithStreams istream Streams.stdout extract (do
+                let vals = [(name1, intVal), (name2, floatVal), (name3, floatVal)]
+
+                declareNamed vals
+                _ <- I.readln (convertToNamed vals)
+                
+                vals' <- mapM (\(n, _) -> S.mustFind n) vals
+                return $ map S.getValue vals'
+                ) >>= (`shouldBe` [S.IntValue 1, S.FloatValue 2.2, S.FloatValue 3.0])
+
+        it "should throw if an argument is non-var" $ do
+            istream <- Streams.fromByteString $ pack "1 1\n"
+            (do
+                rv <- runWithStreams istream Streams.stdout extract (do
+                    let namedValue1 = S.NamedValue name1 $ S.IntValue 1
+                    S.declareVar name1 namedValue1
+                    I.readln [S.IntValue 1, namedValue1]
+                    )
+                (evaluate . force) rv
+                ) `shouldThrow` anyException -- VariableExpected
+
+        it "should throw if an argument is non-var" $ do
+            istream <- Streams.fromByteString $ pack "1\n"
+            (do
+                rv <- runWithStreams istream Streams.stdout extract (do
+                    let namedValue1 = S.NamedValue name1 intVal
+                    I.readln [namedValue1]
+                    )
+                (evaluate . force) rv
+                ) `shouldThrow` anyException -- UndeclaredSymbol
+
+        it "should read rest of line for string" $ do
+            istream <- Streams.fromByteString $ pack "1 2.2 3\n1 2.2 3"
+            runWithStreams istream Streams.stdout extract (do
+                let vals = [(name1, strVal), (name2, strVal)]
+                
+                declareNamed vals
+                _ <- I.readln (convertToNamed vals)
+                
+                vals' <- mapM (\(n, _) -> S.mustFind n) vals
+                return $ map S.getValue vals'
+                ) >>= (`shouldBe` [S.StrValue "1 2.2 3", S.StrValue "1 2.2 3"])
+
+        it "should throw if try to read boolean" $ do
+            istream <- Streams.fromByteString $ pack "True\n"
+            (do
+                rv <- runWithStreams istream Streams.stdout extract (do
+                    let vals = [(name1, boolVal)]
+                    declareNamed vals
+                    _ <- I.readln (convertToNamed vals)
+                    S.mustFind name1
+                    )
+                (evaluate . force) rv
+                ) `shouldThrow` anyException -- CannotRead

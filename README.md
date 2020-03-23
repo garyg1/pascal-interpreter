@@ -8,9 +8,41 @@ COP 4020 Spring 2020, University of Florida
 Prof. Alin Dobra
 ```
 
+### Features Implemented
+- all basic requirements (while-do, for-do, break/continue, procedures/functions, static scoping)
+- readln/writeln
+- formal parameters, except pass-by-reference (i.e., `var`)
+- used monads (see below)
+
+### Approach
+
+#### Monads
+I chose to implement the interpreter using a monad stack, including `State`, `Reader`, and `Except`. The stack is defined in `src/Pascal/State.hs`.
+```haskell
+type AppState = ExceptT Events (StateT PState (ReaderT AppIO IO))
+type AppIO = (InputStream ByteString, OutputStream ByteString)
+type AppReturn a = (Either Events a, PState)
+
+runApp :: AppIO -> AppState a -> IO (AppReturn a)
+runApp appIO fn = runReaderT (runStateT (runExceptT fn) new) appIO
+```
+
+##### Why?
+- State needs to be passed around everywhere.
+- Readln or Writeln can be called nearly anywhere, so access is needed to an I/O object.
+- `continue` and `break` throw and catch exceptions, but state still must be passed.
+
+#### Dependency Injection
+Instead of using the IO monad directly, I wrapped stdin/stdout using the `io-streams` library. I made the istream/ostream accessible with the `Reader` monad. 
+
+##### Why?
+- Made it possible to test I/O within Haskell/HSpec without dependending on the filesystem
+- Can inject an in-memory output stream using the `knob` library.
+
 ### Dependencies
 - happy (https://www.haskell.org/happy/)
 - alex (https://www.haskell.org/alex/)
+- see the `.cabal` file for list of all libraries used
 
 ### Usage
 #### Installation
@@ -23,7 +55,7 @@ cabal install
 cabal run RunPascal -- tests/<test-name>.pas
 ```
 
-#### Stats
+### Stats
 ```bash
 $ find . | grep -E "(src|test).*\.hs" | xargs wc
      221     868    8146 ./test/Pascal/StateSpec.hs

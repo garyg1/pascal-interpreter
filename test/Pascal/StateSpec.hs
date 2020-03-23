@@ -1,17 +1,20 @@
 module Pascal.StateSpec (spec) where
 
 import           Control.DeepSeq
-import           Control.Exception   (evaluate)
+import           Control.Exception     (evaluate)
 import           Control.Monad.State
-import qualified Data.Map            as Map
-import           Data.Maybe          (fromJust)
-import qualified Data.Set            as Set
-import qualified Pascal.Data         as D
-import qualified Pascal.Scope        as Scope
-import qualified Pascal.State        as S
-import           Pascal.TestUtils    (extract, run)
+import           Data.ByteString.Char8 (pack, unpack)
+import           Data.Knob
+import qualified Data.Map              as Map
+import           Data.Maybe            (fromJust)
+import qualified Data.Set              as Set
+import qualified Pascal.Data           as D
+import qualified Pascal.Scope          as Scope
+import qualified Pascal.State          as S
+import           Pascal.TestUtils      (extract, run, runWithStreams)
+import           System.IO             (IOMode (WriteMode), hClose)
+import qualified System.IO.Streams     as Streams
 import           Test.Hspec
-
 
 spec :: Spec
 spec = do
@@ -220,3 +223,40 @@ spec = do
         it "should throw if not found found" $ do
             val <- run extract (S.mustReplace name value'')
             (evaluate . force) val `shouldThrow` anyException -- Unknown Symbol
+
+    describe "getline" $ do
+        it "should read exactly one line if there are multiple" $ do
+            istream <- Streams.fromByteString $ pack "line1\nline2\n"
+            runWithStreams istream Streams.stdout extract S.getline
+                >>= (`shouldBe` "line1")
+
+        it "should read until EOF if there are no newlines" $ do
+            istream <- Streams.fromByteString $ pack "line1"
+            runWithStreams istream Streams.stdout extract S.getline
+                >>= (`shouldBe` "line1")
+
+        it "should read empty string if stream is empty" $ do
+            istream <- Streams.fromByteString $ pack ""
+            runWithStreams istream Streams.stdout extract S.getline
+                >>= (`shouldBe` "")
+
+        it "should throw if stream is expended" $ do
+            istream <- Streams.fromByteString $ pack ""
+            line <- runWithStreams istream Streams.stdout extract (do
+                _ <- S.getline
+                S.getline
+                )
+            (evaluate . force) line `shouldThrow` anyException
+
+    describe "putline" $
+        it "should put exact string in the assigned output stream" $ do
+            knob <- newKnob (pack [])
+            h <- newFileHandle knob "~Pascal-Temp-InMemory.out" WriteMode
+            outstream <- Streams.handleToOutputStream h
+
+            runWithStreams Streams.stdin outstream extract (S.putline "line1\n")
+
+            hClose h
+            actual <- Data.Knob.getContents knob
+            unpack actual `shouldBe` "line1\n"
+

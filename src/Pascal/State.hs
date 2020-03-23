@@ -109,8 +109,10 @@ data PState = PState
 {- we use exceptions for "continue" and "break",
 so State must be returned EVEN IF there's an Monad.Except event -}
 type AppState = ExceptT Events (StateT PState (ReaderT AppIO IO))
-type AppReturn a = (Either Events a, PState)
+
 type AppIO = (InputStream ByteString, OutputStream ByteString)
+
+type AppReturn a = (Either Events a, PState)
 
 runApp :: AppIO -> AppState a -> IO (AppReturn a)
 runApp appIO fn = runReaderT (runStateT (runExceptT fn) new) appIO

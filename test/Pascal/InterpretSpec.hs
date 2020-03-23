@@ -832,7 +832,7 @@ spec = do
 
                 declareNamed vals
                 _ <- I.readln (convertToNamed vals)
-                
+
                 vals' <- mapM (\(n, _) -> S.mustFind n) vals
                 return $ map S.getValue vals'
                 ) >>= (`shouldBe` [S.IntValue 1, S.FloatValue 2.2, S.FloatValue 3.0])
@@ -862,16 +862,16 @@ spec = do
             istream <- Streams.fromByteString $ pack "1 2.2 3\n1 2.2 3"
             runWithStreams istream Streams.stdout extract (do
                 let vals = [(name1, strVal), (name2, strVal)]
-                
+
                 declareNamed vals
                 _ <- I.readln (convertToNamed vals)
-                
+
                 vals' <- mapM (\(n, _) -> S.mustFind n) vals
                 return $ map S.getValue vals'
                 ) >>= (`shouldBe` [S.StrValue "1 2.2 3", S.StrValue "1 2.2 3"])
 
         it "should throw if try to read boolean" $ do
-            istream <- Streams.fromByteString $ pack "True\n"
+            istream <- Streams.fromByteString $ pack "true\n"
             (do
                 rv <- runWithStreams istream Streams.stdout extract (do
                     let vals = [(name1, boolVal)]

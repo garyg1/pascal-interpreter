@@ -1,14 +1,7 @@
-## Pascal Interpreter
+# Pascal Interpreter
+Interpreter for a decent subset of Pascal. (This was done for a class project.)
 
-### Contact
-```
-Gary Gurlaskie
-UFID: 6761-4364
-COP 4020 Spring 2020, University of Florida
-Prof. Alin Dobra
-```
-
-### Usage
+## Usage
 #### Run Interpreter
 ```
 cabal run RunPascal -- tests/SystemTests/<test-name>.pas
@@ -19,13 +12,13 @@ cabal run RunPascal -- tests/SystemTests/<test-name>.pas
 cabal test
 ```
 
-### Features Implemented
+## Features Implemented
 - all basic requirements (while-do, for-do, break/continue, procedures/functions, static scoping)
 - readln/writeln
 - formal parameters, except pass-by-reference (i.e., `var`)
 - used monads (see below)
 
-### Approach
+## Approach
 #### Monads
 I chose to implement the interpreter using a monad stack, including `State`, `Reader`, and `Except`. The stack is defined in `src/Pascal/State.hs`.
 ```haskell
@@ -49,12 +42,11 @@ Instead of using the IO monad directly, I wrapped stdin/stdout using the `io-str
 - Made it possible to test I/O within Haskell/HSpec without dependending on the filesystem
 - Can inject an in-memory output stream using the `knob` library.
 
-### Dependencies
+## Main Dependencies
 - happy (https://www.haskell.org/happy/)
 - alex (https://www.haskell.org/alex/)
-- see the `.cabal` file for list of all libraries used
 
-### Stats
+## Stats
 ```bash
 $ find . | grep -E "(src|test).*\.hs" | xargs wc -l
      262 ./test/Pascal/StateSpec.hs

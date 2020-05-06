@@ -2,6 +2,20 @@
 Interpreter for a decent subset of Pascal, with full unit test coverage + system tests. (This was done for a class project.)
 
 ## Pascal Examples
+#### Recursive Factorial
+```pascal
+begin
+    if n = 0 then 
+        factorial := 1
+    else
+        factorial := n * factorial(n - 1);
+end;
+
+begin
+    writeln(factorial(6));
+    writeln(factorial(5) * factorial(10));
+end.
+```
 #### Fast Modular Exponentiation (FME)
 ```pascal
 program fme;

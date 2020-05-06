@@ -1,5 +1,5 @@
 # Pascal Interpreter
-Interpreter for a decent subset of Pascal. (This was done for a class project.)
+Interpreter for a decent subset of Pascal, with full unit test coverage + 50+ system tests. (This was done for a class project.)
 
 ## Usage
 #### Run Interpreter
@@ -13,10 +13,9 @@ cabal test
 ```
 
 ## Features Implemented
-- all basic requirements (while-do, for-do, break/continue, procedures/functions, static scoping)
+- many basic aspects of the language (if-then, while-do, for-do, break/continue, procedures/functions, static scoping)
 - readln/writeln
-- formal parameters, except pass-by-reference (i.e., `var`)
-- used monads (see below)
+- formal parameters, excluding pass-by-reference (i.e., `var`)
 
 ## Approach
 #### Monads

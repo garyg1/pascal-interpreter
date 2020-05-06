@@ -27,7 +27,7 @@ program fme;
 // adapted from wikipedia
 function fme(base, exp, modulus : integer): integer;
 var i : integer;
-var result : integer = 1;
+    result : integer = 1;
 begin
     while exp > 0 do
     begin

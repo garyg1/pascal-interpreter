@@ -4,6 +4,9 @@ Interpreter for a decent subset of Pascal, with full unit test coverage + system
 ## Pascal Examples
 #### Recursive Factorial
 ```pascal
+program recursive_test;
+
+function factorial(n: integer): integer;
 begin
     if n = 0 then 
         factorial := 1

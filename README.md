@@ -1,5 +1,5 @@
 # Pascal Interpreter
-Interpreter for a decent subset of Pascal, with full unit test coverage + 50+ system tests. (This was done for a class project.)
+Interpreter for a decent subset of Pascal, with full unit test coverage + system tests. (This was done for a class project.)
 
 ## Usage
 #### Run Interpreter

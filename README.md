@@ -1,6 +1,22 @@
 # Pascal Interpreter
 Interpreter for a decent subset of Pascal, with full unit test coverage + system tests. (This was done for a class project.)
 
+## Usage
+#### Run Interpreter
+```
+cabal run RunPascal -- tests/SystemTests/<test-name>.pas
+```
+
+#### Run Tests (System + Unit)
+```
+cabal test
+```
+
+## Features Implemented
+- many basic aspects of the language (if-then, while-do, for-do, break/continue, procedures/functions, static scoping)
+- readln/writeln
+- formal parameters, excluding pass-by-reference (i.e., `var`)
+
 ## Pascal Examples
 #### Recursive Factorial
 ```pascal
@@ -45,22 +61,6 @@ begin
     writeln(fme(3, 1000, 500));
 end.
 ```
-
-## Usage
-#### Run Interpreter
-```
-cabal run RunPascal -- tests/SystemTests/<test-name>.pas
-```
-
-#### Run Tests (System + Unit)
-```
-cabal test
-```
-
-## Features Implemented
-- many basic aspects of the language (if-then, while-do, for-do, break/continue, procedures/functions, static scoping)
-- readln/writeln
-- formal parameters, excluding pass-by-reference (i.e., `var`)
 
 ## Approach
 #### Monads

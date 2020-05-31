@@ -4,7 +4,7 @@ Interpreter for a decent subset of Pascal, with full unit test coverage + system
 ## Usage
 #### Run Interpreter
 ```
-cabal run RunPascal -- tests/SystemTests/<test-name>.pas
+cabal run RunPascal -- <file-name>.pas
 ```
 
 #### Run Tests (System + Unit)
